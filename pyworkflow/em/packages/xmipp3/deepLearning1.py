@@ -360,16 +360,14 @@ class DataManager(object):
     self.mdListFalse=None
     self.nFalse=0 #Number of negative particles in dataManager
 
-    self.mdListTrue, self.fnListOfListTrue, self.weightListTrue, self.nTrue, self.shape= self.colectMetadata(posSetDict)
-    self.weightListTrue= [ elem/float(sum(self.weightListTrue)) for elem in  self.weightListTrue]
+    self.mdListTrue, self.fnMergedListTrue, self.weightListTrue, self.nTrue, self.shape= self.colectMetadata(posSetDict)
     self.batchSize= min(BATCH_SIZE, self.nTrue)
     self.splitPoint= self.batchSize//2
 
     self.batchStack = np.zeros((self.batchSize,)+self.shape)
 
     if not negSetDict is None:
-      self.mdListFalse, self.fnListOfListFalse, self.weightListFalse, self.nFalse, shapeFalse=  self.colectMetadata(negSetDict)
-      self.weightListFalse= [ elem/float(sum(self.weightListFalse)) for elem in  self.weightListFalse]
+      self.mdListFalse, self.fnMergedListFalse, self.weightListFalse, self.nFalse, shapeFalse=  self.colectMetadata(negSetDict)
       assert shapeFalse== self.shape, "Negative images and positive images have differnt shape"
       self.getRandomBatch= self.getRandomBatchWorker
     else:
@@ -381,8 +379,8 @@ class DataManager(object):
 
   def colectMetadata(self, dictData):
     mdList=[]
-    fnamesList=[]
-    weightsList= []
+    fnamesList_merged=[]
+    weightsList_merged= []
     nParticles=0
     shapeParticles=(None, None, 1)
     for fnameXMDF in sorted(dictData):
@@ -390,7 +388,7 @@ class DataManager(object):
       mdObject  = md.MetaData(fnameXMDF)
       imgFnames = mdObject.getColumnValues(md.MDL_IMAGE)
       mdList+= [mdObject]
-      fnamesList+= [imgFnames]
+      fnamesList_merged+= imgFnames
       xdim, ydim, _   = setOfParticlesObject.getDim()
       tmpShape= (xdim,ydim,1)
       tmpNumParticles= setOfParticlesObject.getSize()
@@ -399,10 +397,14 @@ class DataManager(object):
         assert tmpShape== shapeParticles, "Error, particles of different shapes mixed"
       else:
         shapeParticles= tmpShape
-      weightsList+= [ weight ]
+      weightsList_merged+= [ weight  for elem in imgFnames]
       nParticles+= tmpNumParticles
     print(sorted(dictData))
-    return mdList, fnamesList, weightsList, nParticles, shapeParticles
+    weightsList_merged= [ elem/float(nParticles) for elem in  weightsList_merged]
+    c = list(zip(fnamesList_merged, weightsList_merged))
+    random.shuffle(c)
+    fnamesList_merged, weightsList_merged = zip(*c)
+    return mdList, fnamesList_merged, weightsList_merged, nParticles, shapeParticles
 
   def getMetadata(self, setNumber=None) :
 
@@ -476,21 +478,14 @@ class DataManager(object):
     batchStack   = self.batchStack
     batchLabels  = np.zeros((batchSize, 2))
 
-    dataSetNumTrue=  np.random.choice(len(self.mdListTrue), p= self.weightListTrue)
-    dataSetNumFalse= np.random.choice(len(self.mdListFalse), p=self.weightListFalse)
-    print("DataSets in batch %d/%d"%(dataSetNumTrue, dataSetNumFalse))
+    fnamesTrue= self.fnMergedListTrue
+    fnamesFalse= self.fnMergedListFalse
 
-    metadataTrue= self.mdListTrue[dataSetNumTrue]
-    metadataFalse= self.mdListFalse[dataSetNumFalse]
-
-    fnamesTrue= self.fnListOfListTrue[dataSetNumTrue]
-    fnamesFalse= self.fnListOfListFalse[dataSetNumFalse]
-
-    nTrue= len(fnamesTrue)
+    nTrue=  len(fnamesTrue)
     nFalse= len(fnamesFalse)
 
-    idxListTrue =  np.random.choice( nTrue,  splitPoint, False)
-    idxListFalse = np.random.choice( nFalse, splitPoint, False)
+    idxListTrue =  np.random.choice( nTrue,  splitPoint, False, p= self.weightListTrue)
+    idxListFalse = np.random.choice( nFalse, splitPoint, False, p= self.weightListFalse)
 
     I = xmipp.Image()
     n = 0
@@ -580,8 +575,7 @@ class DataManager(object):
     n = 0
 
     currNBatches=0
-    for fnListTrue, fnListFalse in zip(self.fnListOfListTrue, self.fnListOfListFalse):
-      for fnImageTrue, fnImageFalse in zip(fnListTrue, fnListFalse):
+    for fnImageTrue, fnImageFalse in zip(self.fnMergedListTrue, self.fnMergedListFalse):
         I.read(fnImageTrue)
         batchStack[n,...]= np.expand_dims(I.getData(),-1)
         batchLabels[n, 1]= 1
@@ -604,6 +598,6 @@ class DataManager(object):
           currNBatches+=1
           if currNBatches>=nBatches:
             break
-      if n>0:
+    if n>0:
         yield batchStack[:n,...], batchLabels[:n,...]
 

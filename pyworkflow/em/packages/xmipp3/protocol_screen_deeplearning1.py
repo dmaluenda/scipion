@@ -53,29 +53,27 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
 
         form.addParam('inPosSetOfParticles', params.PointerParam, label="Consensus particles (mostly true particles)", 
                       pointerClass='SetOfParticles', 
-                      help='Select the intersection set of particles (mostly true particles).')
-
-        form.addParam('inNegSetOfParticles1Picked', params.PointerParam, label="Set of negative particles single Picked", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
-        form.addParam('inNegWeight1Picked', params.IntParam , default='1', label="Weight of negative particles single Picked", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
+                      help='Select the intersection set of particles (mostly true particles).\n'
+               'Recomended set: good Z-score AND consensus of several pickers')
 
 
-        form.addParam('inNegSetOfParticlesBadZScore', params.PointerParam, label="Set of negative particles badZscore", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
-        form.addParam('inNegWeightBadZScore', params.IntParam , default='1', label="Weight of negative particles badZscore", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
-
-        form.addParam('inNegSetOfParticlesRandom', params.PointerParam, label="Set of negative particles randomPick", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
-        form.addParam('inNegWeightRandom', params.IntParam , default='1', label="Weight of negative particles randomPick", 
-                      pointerClass='SetOfParticles',
-                      help='Select the set of non-particles.')
+        form.addParam('numberOfNegativeSets', params.IntParam, default='1',
+                          label='Number of different negative dataset',
+                          help='Data from all negative datasets will be used for training. Maximun number is 4.\n'
+                       'Recomended negative data sets are 3:\n'
+                   '1) Random picked (pick noise protocol)\n'
+                   '2) Bad Z-score from multiple picker OR consensus\n'
+                   '3) Bad Z-score from multiple picker picked just by one\n')
+        for num in range( 1, 5):
+            form.addParam('negativeSet_%d'%num, params.PointerParam, 
+                            condition='numberOfNegativeSets<=0 or numberOfNegativeSets >=%d'%num,
+                            label="Set of negative train particles %d"%num, 
+                            pointerClass='SetOfParticles',
+                            help='Select the set of negative particles for training.')
+            form.addParam('inNegWeight_%d'%num, params.IntParam, default='1',
+                            condition='numberOfNegativeSets<=0 or numberOfNegativeSets >=%d'%num,
+                            label="Weight of negative train particles %d"%num, 
+                            help='Select the weigth for the negative set of particles.')
 
 
         form.addParam('predictSetOfParticles', params.PointerParam, label="Set of putative particles to predict", 
@@ -86,7 +84,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       label='Auto stop training when convergency is detected?',
                       help='If you set to *Yes*, the program will automatically stop training'
                       'if there is no improvement for consecutive 2 epochs, learning rate will be decreased'
-            'by a factor 10. If learningRate_t < 0.01*learningrate_0 training will stop. Warning: '
+                      'by a factor 10. If learningRate_t < 0.01*learningrate_0 training will stop. Warning: '
                       'Sometimes convergency seems to be reached, but after time, improvement can still happen. '
                       'Not recommended for very small data sets (<100 true particles)')
 
@@ -105,7 +103,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         form.addParam('learningRate', params.FloatParam, label="Learning rate", default=1e-3, expertLevel=params.LEVEL_ADVANCED,
                       help='Learning rate for neural network training')
         form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=3, expertLevel=params.LEVEL_ADVANCED,
-                      help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 20. The more the better'
+                      help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 10. The more the better'
                       'until a point where no gain is obtained')  
 
         form.addSection(label='testingData')
@@ -129,12 +127,11 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             negSetDict= { fname: [(SetOfParticles, weight:int)]}
         '''
         posSetTrainDict={self._getExtraPath("inputTrueParticlesSet.xmd"):(self.inPosSetOfParticles.get(), 1)}
-        negSetTrainDict={self._getExtraPath("inputFalseParticlesSetBadZScore.xmd"): (self.inNegSetOfParticlesBadZScore.get(),
-                                                                                     self.inNegWeightBadZScore.get()),
-                    self._getExtraPath("inputFalseParticlesSet1Picked.xmd"): (self.inNegSetOfParticles1Picked.get(), 
-                                                                                self.inNegWeight1Picked.get()),
-                    self._getExtraPath("inputFalseParticlesSetRandom.xmd"): (self.inNegSetOfParticlesRandom.get(),
-                                                                             self.inNegWeightRandom.get())}
+        negSetTrainDict={}
+        for num in range( 1, 5):
+            if self.numberOfNegativeSets<=0 or self.numberOfNegativeSets >=num:
+                negSetTrainDict[self._getExtraPath("negativeSet_%d.xmd"%num)]=(self.__dict__["negativeSet_%d"%num].get(),
+                                                                               self.__dict__["inNegWeight_%d"%num].get())
         setPredict={self._getExtraPath("predictSetOfParticles.xmd"): (self.predictSetOfParticles.get(),1) }
         setTestPos={self._getExtraPath("testTrueParticlesSet.xmd"):  (self.testPosSetOfParticles.get(),1)}
         setTestNeg={self._getExtraPath("testFalseParticlesSet.xmd"): (self.testNegSetOfParticles.get(),1)}
