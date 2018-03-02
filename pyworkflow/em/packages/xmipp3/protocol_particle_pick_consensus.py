@@ -113,9 +113,9 @@ class XmippProtConsensusPicking(ProtParticlePicking):
         n=0
         for coordinates in self.inputCoordinates:
             coordArray = np.asarray([x.getPosition() 
-                                     for x in coordinates.get().iterCoordinates(micId)],dtype=np.float)
-            coordArray *= Tm[n]/Tm[0]
-            coords.append(coordArray)
+                                     for x in coordinates.get().iterCoordinates(micId)], dtype=float)
+            coordArray *= float(Tm[n])/float(Tm[0])
+            coords.append(np.asarray(coordArray,dtype=int))
             Ncoords += coordArray.shape[0]
             n+=1
         
