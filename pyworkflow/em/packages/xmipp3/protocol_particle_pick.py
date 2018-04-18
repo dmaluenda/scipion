@@ -32,6 +32,8 @@ import xmipp
 from xmipp3 import XmippProtocol
 from pyworkflow.em.showj import launchSupervisedPickerGUI
 from convert import writeSetOfMicrographs, readSetOfCoordinates
+from pyworkflow.protocol.params import RelationParam
+from pyworkflow.em.constants import RELATION_CTF
 
 
 class XmippProtParticlePicking(ProtParticlePicking, XmippProtocol):
@@ -48,6 +50,13 @@ class XmippProtParticlePicking(ProtParticlePicking, XmippProtocol):
     #--------------------------- DEFINE param functions ------------------------   
     def _defineParams(self, form):
         ProtParticlePicking._defineParams(self, form)
+        form.addParam('ctfRelations', RelationParam, allowsNull=True,
+                      relationName=RELATION_CTF,
+                      attributeName='getInputMicrographs',
+                      label='CTF estimation',
+                      help='Choose some CTF estimation related to input '
+                           'micrographs. \nCTF estimation is used to show the '
+                           'defocus information of the micrographs')
         form.addParam('memory', FloatParam, default=2,
                       label='Memory to use (In Gb)', expertLevel=2)
         form.addParam('saveDiscarded', BooleanParam, default=False,
@@ -74,8 +83,9 @@ class XmippProtParticlePicking(ProtParticlePicking, XmippProtocol):
     def launchParticlePickGUIStep(self, micFn):
         # Launch the particle picking GUI
         extraDir = self._getExtraPath()
+        ctfFn = self.ctfRelations.get().getFileName()
         memory = '%dg'%self.memory.get()
-        process = launchSupervisedPickerGUI(micFn, extraDir, self, memory=memory)
+        process = launchSupervisedPickerGUI(micFn, extraDir, self, memory=memory, ctf=ctfFn)
         process.wait()
         # generate the discarded output only if there is a good output
         if self.saveDiscarded and exists(self._getPath('coordinates.sqlite')):
