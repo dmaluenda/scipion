@@ -27,7 +27,6 @@
 from __future__ import print_function
 
 from six.moves import range
-import numpy as np
 import sys, os
 
 import numpy as np
@@ -36,12 +35,11 @@ import random
 from math import ceil
 
 import time
-from os.path import expanduser
 from pyworkflow.utils import Environ
-from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.metrics import roc_auc_score
+from sklearn.utils import shuffle
 import xmipp
 import pyworkflow.em.metadata as md
-import joblib
 
 DEBUG=False
 if DEBUG: print("Debug MODE")
@@ -54,6 +52,8 @@ def updateEnviron(gpuNum=None):
     environ.update({'LD_LIBRARY_PATH': os.environ['CUDA_HOME']+"/extras/CUPTI/lib64"}, position=Environ.BEGIN)
 
     os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST GPU:# must be changed to select desired gpu
+  else:
+    os.environ['CUDA_VISIBLE_DEVICES']="-1"
 
 import tensorflow as tf
 import tflearn
@@ -66,7 +66,7 @@ EVALUATE_AT= 10
 CHECK_POINT_AT= 100
 
 
-    
+
 class DeepTFSupervised(object):
   def __init__(self, rootPath, modelNum=0):
     '''
@@ -75,7 +75,7 @@ class DeepTFSupervised(object):
                                                       tfchkpoints/
                                                       tflogs/
       @param learningRate: float. Learning rate for net training
-       
+
     '''
     self.lRate= None
     self.rootPath= rootPath
@@ -88,7 +88,7 @@ class DeepTFSupervised(object):
     self.num_labels=2
     self.num_channels=None
     self.image_size=None
-    
+
     # Tensorflow objects
     self.X= None
     self.Y= None
@@ -125,15 +125,15 @@ class DeepTFSupervised(object):
     self.global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
     (self.y_pred, self.merged_summaries, self.optimizer,
      self.loss, self.accuracy)= main_network(self.X,self.Y, num_labels, self.lRate, globalStep= self.global_step, nData= nData)
-  
+
   def startSessionAndInitialize(self, numberOfThreads=8):
     '''
-      @param numberOfThreads. Number of threads to use in cpu mode. If numberOfThreads==None 
+      @param numberOfThreads. Number of threads to use in cpu mode. If numberOfThreads==None
                               then default behaviour is expected (use GPU if available otherwise
                               one thread per cpu)
     '''
     print("Initializing tf session")
-    
+
     save_dir, prefixName = os.path.split(self.checkPointsNames)
     if not os.path.exists(save_dir):
       os.makedirs(save_dir)
@@ -151,7 +151,7 @@ class DeepTFSupervised(object):
       last_chk_path = tf.train.latest_checkpoint(checkpoint_dir= save_dir)
 
       # Try and load the data in the checkpoint.
-      
+
       self.saver.restore(self.session, save_path=last_chk_path)
       # If we get to this point, the checkpoint was successfully loaded.
       print("Restored checkpoint from:", last_chk_path)
@@ -166,19 +166,19 @@ class DeepTFSupervised(object):
       os.makedirs(os.path.join(self.logsSaveName,"train"))
       os.makedirs(os.path.join(self.logsSaveName,"test"))
       self.session.run( tf.global_variables_initializer() )
-      
+
     self.train_writer = tf.summary.FileWriter(os.path.join(self.logsSaveName,"train"), self.session.graph)
     self.test_writer = tf.summary.FileWriter(os.path.join(self.logsSaveName,"test"), self.session.graph)
     return self.session
-  
+
   def close(self, saveModel= False):
     '''
       Closes a tensorflow connection and related objects.
       @param. saveModel: boolean. If True, model will be saved prior closing model
-    
+
     '''
     if saveModel:
-      self.saver.save(self.session, save_path= self.checkPointsNames, global_step= self.global_step) 
+      self.saver.save(self.session, save_path= self.checkPointsNames, global_step= self.global_step)
       print("\nSaved checkpoint.")
     self.train_writer.close()
     self.test_writer.close()
@@ -190,7 +190,7 @@ class DeepTFSupervised(object):
     '''
       Resets a tensorflow connection and related objects.
       Needed if 2 independent trains want to be done in the same program.
-    
+
     '''
     self.train_writer.close()
     self.test_writer.close()
@@ -201,18 +201,17 @@ class DeepTFSupervised(object):
 
   def trainNet(self, numberOfBatches, dataManagerTrain, learningRate, dataManagerTest=None, auto_stop=False):
     '''
-      @param numberOfBatches: int. The number of batches that will be used for training 
+      @param numberOfBatches: int. The number of batches that will be used for training
       @param dataManagerTrain: DataManager. Object that will provide training batches (Xs and labels)
       @param dataManagerTest:  DataManager. Optional Object that will provide testing batches (Xs and labels)
                                             If not provided, no testing will be done
     '''
-    
+
     ########################
     # TENSOR FLOW RUN
     ########################
     numberOfBatches= max( numberOfBatches, CHECK_POINT_AT+1)
     print("Learning rate %.1e"% learningRate)
-    learningRate_0= learningRate
     learningRate_At_Convergency= 0.01* learningRate
     print("auto_stop:", auto_stop)
     batchsPerEpoch= dataManagerTrain.getEpochSize()// dataManagerTrain.getBatchSize() +1
@@ -220,7 +219,7 @@ class DeepTFSupervised(object):
     hasImproved=False
     numEpochsNoImprov=0
     epochImprovement= 0
-    numEpochsNoImprov_Limit= 2 
+    numEpochsNoImprov_Limit= 2
     if batchsPerEpoch < 5:
       numEpochsNoImprov_Limit= 10
     elif batchsPerEpoch< 10:
@@ -242,6 +241,7 @@ class DeepTFSupervised(object):
       print("Initial loss %f"%stepLoss)
       self.testPerformance(i_global, trainDataBatch,dataManagerTest)
     else:
+      print("Model will be used as it is, with no more training")
       return
 
     time0 = time.time()
@@ -258,7 +258,7 @@ class DeepTFSupervised(object):
       currentLoss.append( stepLoss)
 
       print("iterNum %d/%d trainLoss: %3.4f"%((i_global), numberOfBatches, stepLoss))
-      sys.stdout.flush()      
+      sys.stdout.flush()
       if dataManagerTest and i_global % EVALUATE_AT ==0:
         timeBatches= time.time() -time0
         timeTest=time.time()
@@ -266,7 +266,7 @@ class DeepTFSupervised(object):
         print("%d batches time: %f s. time for test %f s"%(EVALUATE_AT, timeBatches, time.time() -timeTest))
         time0 = time.time()
         sys.stdout.flush()
-          
+
       if (i_global + 1 ) % saving_checkpoint_at==0:
         stepLossMean= np.min(currentLoss)
         currentLoss=[]
@@ -277,7 +277,7 @@ class DeepTFSupervised(object):
           modelWasSaved=True
           hasImproved= True
           bestStepLoss= stepLossMean
-          self.saver.save(self.session, save_path= self.checkPointsNames, global_step= self.global_step) 
+          self.saver.save(self.session, save_path= self.checkPointsNames, global_step= self.global_step)
           print("\nSaved checkpoint.")
 
       if auto_stop and ((i_global+1)% batchsPerEpoch)==0:
@@ -303,14 +303,14 @@ class DeepTFSupervised(object):
 
   def accuracy_score(self, labels, predictions ):
     return (100.0 * np.sum(np.argmax(predictions, 1) == np.argmax(labels, 1))
-            / predictions.shape[0])    
+            / predictions.shape[0])
 
   def testPerformance(self, stepNum, trainDataBatch, testDataManager=None):
-    tflearn.is_training(False, session=self.session)      
+    tflearn.is_training(False, session=self.session)
 
     batch_x, batch_y, md_ids= trainDataBatch
     feed_dict_train= {self.X : batch_x, self.Y: batch_y}
-    c_e_train, y_pred_train, merged = self.session.run( [self.loss, self.y_pred, self.merged_summaries], 
+    c_e_train, y_pred_train, merged = self.session.run( [self.loss, self.y_pred, self.merged_summaries],
                                                  feed_dict = feed_dict_train )
     train_accuracy=  self.accuracy_score(batch_y, y_pred_train)
     train_auc= roc_auc_score(batch_y, y_pred_train)
@@ -332,11 +332,11 @@ class DeepTFSupervised(object):
       self.test_writer.add_summary(merged, stepNum)
       print("iterNum %d accuracy(train/test) %f / %f   auc  %f / %f"%(stepNum,train_accuracy,test_accuracy,
                                                                       train_auc, test_auc))
-    tflearn.is_training(True, session=self.session)      
-    
+    tflearn.is_training(True, session=self.session)
+
 
   def predictNet(self, dataManger):
-    tflearn.is_training(False, session=self.session)      
+    tflearn.is_training(False, session=self.session)
     y_pred_list=[]
     labels_list=[]
     metadataId_list=[]
@@ -372,7 +372,7 @@ class DataManager(object):
       self.getRandomBatch= self.getRandomBatchWorker
     else:
       self.getRandomBatch= self.NOgetRandomBatchWorker
-    
+
     if DEBUG:
       self.nTrue=  2**9
       self.nFalse= 2**9
@@ -400,10 +400,9 @@ class DataManager(object):
       weightsList_merged+= [ weight  for elem in imgFnames]
       nParticles+= tmpNumParticles
     print(sorted(dictData))
-    weightsList_merged= [ elem/float(nParticles) for elem in  weightsList_merged]
-    c = list(zip(fnamesList_merged, weightsList_merged))
-    random.shuffle(c)
-    fnamesList_merged, weightsList_merged = zip(*c)
+    weightsList_merged= np.array(weightsList_merged, dtype= np.float64)
+    weightsList_merged= weightsList_merged/ weightsList_merged.sum()
+    fnamesList_merged, weightsList_merged= shuffle(fnamesList_merged, weightsList_merged)
     return mdList, fnamesList_merged, weightsList_merged, nParticles, shapeParticles
 
   def getMetadata(self, setNumber=None) :
@@ -457,7 +456,7 @@ class DataManager(object):
         sigma = random.uniform(0., sigma_max)
         batch[i] =scipy.ndimage.filters.gaussian_filter(batch[i], sigma)
     return batch
-  
+
   def augmentBatch(self, batch):
     if bool(random.getrandbits(1)):
       batch= self._random_flip_leftright(batch)
@@ -470,7 +469,7 @@ class DataManager(object):
 
   def NOgetRandomBatchWorker(self):
     raise ValueError("needs positive and negative images to compute random batch. Just pos provided")
-    
+
   def getRandomBatchWorker(self):
 
     batchSize = self.batchSize
@@ -550,7 +549,6 @@ class DataManager(object):
     if not self.mdListFalse is None:
       for dataSetNum in range(len(self.mdListFalse)):
         mdFalse= self.mdListFalse[dataSetNum]
-        fnamesFalse= self.fnListOfListFalse[dataSetNum]
         for objId in mdFalse:
           fnImage = mdFalse.getValue(md.MDL_IMAGE, objId)
           I.read(fnImage)

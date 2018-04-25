@@ -385,9 +385,9 @@ tensorflow = env.addLibrary(
                'export TF_ENABLE_XLA=0; export TF_NEED_OPENCL=0; %(tensorflowVars)s; export USE_DEFAULT_PYTHON_LIB_PATH=1; '\
                'cd software/tmp/tensorflow-1.1; ./configure; bazel build --config=opt %(tensorflowFlags)s //tensorflow/tools/pip_package:build_pip_package; '\
                'bazel-bin/tensorflow/tools/pip_package/build_pip_package %(scpSoftware)s/tmp/tensorflow_pkg; '\
-               '%(scpSoftware)s/bin/python %(scpSoftware)s/lib/python2.7/site-packages/pip install %(scpSoftware)s/tmp/tensorflow_pkg/tensorflow-1.1*.whl'%\
-               locals(),
-               'software/lib/python2.7/site-packages/tensorflow')],
+               '%(scpSoftware)s/bin/python %(scpSoftware)s/lib/python2.7/site-packages/pip install %(scpSoftware)s/tmp/tensorflow_pkg/tensorflow-1.1*.whl'%locals(),
+               'software/lib/python2.7/site-packages/tensorflow; '\
+               '%(scpSoftware)s/bin/python %(scpSoftware)s/lib/python2.7/site-packages/pip install tflearn'%locals())],
     deps=[python,bazel,wheel,pip,joblib],
     default=False)
 

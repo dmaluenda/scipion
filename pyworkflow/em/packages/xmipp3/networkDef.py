@@ -2,8 +2,6 @@
 rsanchez@cnb.csic.es
 
 '''
-
-import os, sys
 import numpy as np
 import tensorflow as tf
 import tflearn
@@ -107,7 +105,7 @@ def main_network(x, labels, num_labels, learningRate, globalStep, nData):
       network = tflearn.layers.normalization.batch_normalization(network)
       network = tflearn.activations.relu(network)
       if i!=modelDepth:
-    	network = tflearn.layers.conv.max_pool_2d(network, kernel_size=7-(2*(i-1)), strides=2)
+    	    network = tflearn.layers.conv.max_pool_2d(network, kernel_size=7-(2*(i-1)), strides=2)
 
     network = tflearn.layers.conv.avg_pool_2d(network, kernel_size=4, strides=2)
     network = tflearn.layers.core.fully_connected( network, 2**9, activation='relu', regularizer='L2', weight_decay= L2_CONST)
