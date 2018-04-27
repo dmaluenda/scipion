@@ -55,7 +55,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       help='If you set to *Yes*, you should provide training set')
 
         form.addParam('inPosSetOfParticles', params.PointerParam, label="True particles",
-                      pointerClass='SetOfParticles', allowsNull=True, condition="keepTraining",
+                      pointerClass='SetOfParticles', allowsNull=True, condition="not doContinue or keepTraining",
                       help='Select a set of particles that are mostly true particles.\n'
                            'Recomended set: good Z-score of AND consensus of two pickers')
 
@@ -67,12 +67,12 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                    '2) Bad Z-score from multiple picker OR consensus\n')
         for num in range( 1, 5):
             form.addParam('negativeSet_%d'%num, params.PointerParam, 
-                            condition='(numberOfNegativeSets<=0 or numberOfNegativeSets >=%d) and keepTraining'%num,
+                            condition='(numberOfNegativeSets<=0 or numberOfNegativeSets >=%d) and (not doContinue or keepTraining)'%num,
                             label="Set of negative train particles %d"%num,
                             pointerClass='SetOfParticles', allowsNull=True,
                             help='Select the set of negative particles for training.')
             form.addParam('inNegWeight_%d'%num, params.IntParam, default='1',
-                            condition='(numberOfNegativeSets<=0 or numberOfNegativeSets >=%d) and keepTraining'%num,
+                            condition='(numberOfNegativeSets<=0 or numberOfNegativeSets >=%d) and (not doContinue or keepTraining)'%num,
                             label="Weight of negative train particles %d"%num, allowsNull=True,
                             help='Select the weigth for the negative set of particles.')
 
@@ -248,7 +248,6 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         resultsDictNeg={}
         for i in range(numModels):
             print("Predicting with model %d/%d"%((i+1), numModels))
-
             nnet = DeepTFSupervised(rootPath=self._getExtraPath("nnetData"), modelNum=i)
             nnet.createNet( dataShape[0], dataShape[1], dataShape[2], nTrue)
             nnet.startSessionAndInitialize(numberOfThreads)
@@ -297,7 +296,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             labels= [ 0 if label[0]==1.0 else 1 for label in labels]
             labels_list[-1].append(labels)
             curr_auc= roc_auc_score(labels, y_pred)
-            curr_acc= accuracy_score(labels, [1 if y>0.5 else 0 for y in y_pred])
+            curr_acc= accuracy_score(labels, [1 if y>=0.5 else 0 for y in y_pred])
             cum_acc_list.append(curr_acc)
             cum_auc_list.append(curr_auc)
             print("Model %d test accuracy: %f  auc: %f"%(i, curr_acc, curr_auc))
@@ -306,16 +305,15 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
           assert np.all( (labels==1) | (labels==0)), "Error, labels mismatch"
           scores= np.mean(scores_list, axis=0)[0,:]
           auc_val= roc_auc_score(labels, scores)
-          scores[ scores>0.5]=1
-          scores[ scores<=0.5]=0
-          accuracy_score(labels, scores)
-          print(">>>>>>>>>>>>\nEnsemble test accuracy            : %f  auc: %f"%(accuracy_score(labels, scores) , auc_val))
-          print("Mean single model test accuracy: %f  auc: %f"%(np.mean(cum_acc_list) , np.mean(cum_auc_list)))
           makeFilePath(self._getExtraPath("nnetData/testPredictions.txt") )
-          with open( self._getExtraPath("nnetData/testPredictions.txt")) as f:
+          with open( self._getExtraPath("nnetData/testPredictions.txt"), "w") as f:
             f.write("label score\n")
             for l, s in zip(labels, scores):
               f.write("%d %f\n"%(l, s))
+          scores[ scores>=0.5]=1
+          scores[ scores<0.5]=0
+          print(">>>>>>>>>>>>\nEnsemble test accuracy            : %f  auc: %f"%(accuracy_score(labels, scores) , auc_val))
+          print("Mean single model test accuracy: %f  auc: %f"%(np.mean(cum_acc_list) , np.mean(cum_auc_list)))
               
     def createOutputStep(self):
         imgSet = self.predictSetOfParticles.get()
