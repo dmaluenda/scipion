@@ -58,8 +58,6 @@ class XmippProtConsensusClasses3D(EMProtocol):
                 self._insertFunctionStep('compareOthersStep', i,
                                      self.inputMultiClasses[i].get().getObjId())
 
-        self._insertFunctionStep('computeInitDistancesStep')
-
         self._insertFunctionStep('createOutputStep')
 
     def compareFirstStep(self, objId1, objId2):
@@ -77,14 +75,13 @@ class XmippProtConsensusClasses3D(EMProtocol):
         for cls1 in set1:
             cls1Id = cls1.getObjId()
             ids1 = cls1.getIdSet()
-            rep1 = (set1Id, cls1Id)
 
             for cls2 in set2:
                 cls2Id = cls2.getObjId()
                 ids2 = cls2.getIdSet()
-                rep2 = (set2Id, cls2Id)
 
-                interTuple = self.intersectClasses(rep1, ids1, rep2, ids2, {})
+                interTuple = self.intersectClasses(set1Id, cls1Id, ids1,
+                                                   set2Id, cls2Id, ids2)
 
                 newList.append(interTuple)
 
@@ -103,48 +100,19 @@ class XmippProtConsensusClasses3D(EMProtocol):
         for cls1 in set1:
             cls1Id = cls1.getObjId()
             ids1 = cls1.getIdSet()
-            rep1 = (set1Id, cls1Id)
 
             for currTuple in currDB:
                 ids2 = currTuple[1]
-                parents = currTuple[2]
-                cl2Size = currTuple[3]
-                rep2 = currTuple[4]
-                 
-                interTuple = self.intersectClasses(rep1, ids1, rep2, ids2, 
-                                                   parents, cl2Size)
+                set2Id = currTuple[2]
+                cls2Id = currTuple[3]
+                clSize = currTuple[4]
+
+                interTuple = self.intersectClasses(set1Id, cls1Id, ids1,
+                                                   set2Id, cls2Id, ids2, clSize)
 
                 newList.append(interTuple)
                 
         self.intersectsList = newList
-
-    def computeInitDistancesStep(self):
-        """ We compute the distances and hierarchiraly reclassificate the classes
-        """
-        conClasses = self.intersectsList
-        numInput = len(self.inputMultiClasses)  # P
-        numOutput = len(conClasses)
-        d = [[0 for x in range(numOutput)] for y in range(numOutput)]
-        for i in range(0, numOutput):
-            for j in range(i+1, numOutput):
-
-                distCum = 0 # initialize
-                for p, inputClass in enumerate(self.inputMultiClasses):
-                    dist=0  # initialize
-                    numClasses = inputClass.get().getSize()  # Np
-                    for k in range(0, numClasses):
-                        # print i, j, p, k
-                        # print conClasses[0][2][p]
-                        di = int(k in conClasses[i][2][p])
-                        dj = int(k in conClasses[j][2][p])
-                        dist += abs(float(di-dj))/numClasses
-                        # print di
-
-                    distCum += dist
-
-                d[i][j] = distCum/numInput
-                print('d(%d,%d) = %f' %(i,j,d[i][j]))
-
 
     def createOutputStep(self):
 
@@ -166,14 +134,14 @@ class XmippProtConsensusClasses3D(EMProtocol):
         for classItem in self.intersectsList:
             numOfPart = classItem[0]
             partIds = classItem[1]
-            setRepId = classItem[4][0]
-            clsRepId = classItem[4][1]
+            setRepId = classItem[2]
+            clsRepId = classItem[3]
 
             setRep = self.inputMultiClasses[setRepId].get()
             clRep = setRep[clsRepId]
 
             newClass = Class3D()
-            # newClass.copyInfo(clRep)  # It give problems when setReps are of diff. tipe (Xmipp, Relion...)
+            newClass.copyInfo(clRep)
             newClass.setAcquisition(clRep.getAcquisition())
             newClass.setRepresentative(clRep.getRepresentative())
 
@@ -207,46 +175,30 @@ class XmippProtConsensusClasses3D(EMProtocol):
 
 
     # --------------------------- UTILS functions ------------------------------
-    def intersectClasses(self, rep1, ids1, rep2, ids2, parents, clsSize2=None):
-        """ Computes the intersection of ids1 and ids2.
-            Assign as rep those from the small class.
-            clsSize2 is used in the iterative steps.
-              It save the original size of the rep2 class
-              It's used to know if we are dealing with a first step or the others
-            parents is the information from where intersection proceds
-        """
+    def intersectClasses(self, setId1, clId1, ids1,
+                               setId2, clId2, ids2, clsSize2=None):
         size1 = len(ids1)
         size2 = len(ids2) if clsSize2 is None else clsSize2
 
         inter = ids1.intersection(ids2)
 
         if size1 < size2:
-            rep = rep1
+            setId = setId1
+            clsId = clId1
             clsSize = size1
         else:
-            rep = rep2
+            setId = setId2
+            clsId = clId2
             clsSize = size2
 
-        if rep1[0] in parents.keys():
-            parents[rep1[0]].append(rep1[1])
-        else:
-            parents[rep1[0]] = [rep1[1]]
+        # print(" ")
+        # print(" - Intersection of cl%d of set%d (%d part.) and "
+        #                          "cl%d of set%d (%d part.):"
+        #        % (clId1, setId1, len(ids1), clId2, setId2, len(ids2)))
+        # print("    Size1=%d < Size2=%d = %s" 
+        #        % (size1, size2, size1<size2))
+        # print("      -> from set %d calss %d, with %d part. in the intersection." 
+        #        % (setId, clsId, len(inter)))
+        # print(" -  -  -  -  -  -  -  -  -  -")
 
-        if clsSize2 is None:
-            if rep2[0] in parents.keys():
-                parents[rep2[0]].append(rep2[1])
-            else:
-                parents[rep2[0]] = [rep2[1]]
-
-        print(" ")
-        print(" - Intersection of cl%d of set%d (%d part.) and "
-                                 "cl%d of set%d (%d part.):"
-               % (rep1[1], rep1[0], len(ids1), rep2[1], rep2[0], len(ids2)))
-        print("    Size1=%d < Size2=%d = %s" 
-               % (size1, size2, size1<size2))
-        print("      -> from set %d calss %d, with %d parts. in the intersection." 
-               % (rep[0], rep[1], len(inter)))
-        print "parents: ", parents
-        print(" -  -  -  -  -  -  -  -  -  -")
-
-        return (len(inter), inter, parents, clsSize, rep)
+        return (len(inter), inter, setId, clsId, clsSize)
