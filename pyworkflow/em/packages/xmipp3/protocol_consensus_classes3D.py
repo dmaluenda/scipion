@@ -84,7 +84,7 @@ class XmippProtConsensusClasses3D(EMProtocol):
                 ids2 = cls2.getIdSet()
                 rep2 = (set2Id, cls2Id)
 
-                interTuple = self.intersectClasses(rep1, ids1, rep2, ids2, {})
+                interTuple = self.intersectClasses(rep1, ids1, rep2, ids2)
 
                 newList.append(interTuple)
 
@@ -104,13 +104,14 @@ class XmippProtConsensusClasses3D(EMProtocol):
             cls1Id = cls1.getObjId()
             ids1 = cls1.getIdSet()
             rep1 = (set1Id, cls1Id)
-
+            
             for currTuple in currDB:
                 ids2 = currTuple[1]
                 parents = currTuple[2]
                 cl2Size = currTuple[3]
                 rep2 = currTuple[4]
-                 
+                print " "
+                print parents
                 interTuple = self.intersectClasses(rep1, ids1, rep2, ids2, 
                                                    parents, cl2Size)
 
@@ -160,6 +161,7 @@ class XmippProtConsensusClasses3D(EMProtocol):
         # print('Number of intersections: %d' % len(self.intersectsList))
         # print('Total of particles: %d' % numberOfPart)
 
+
         inputParticles = self.inputMultiClasses[0].get().getImages()
         outputClasses = self._createSetOfClasses3D(inputParticles)
 
@@ -207,13 +209,13 @@ class XmippProtConsensusClasses3D(EMProtocol):
 
 
     # --------------------------- UTILS functions ------------------------------
-    def intersectClasses(self, rep1, ids1, rep2, ids2, parents, clsSize2=None):
+    def intersectClasses(self, rep1, ids1, rep2, ids2, parentsDict={}, clsSize2=None):
         """ Computes the intersection of ids1 and ids2.
             Assign as rep those from the small class.
             clsSize2 is used in the iterative steps.
               It save the original size of the rep2 class
               It's used to know if we are dealing with a first step or the others
-            parents is the information from where intersection proceds
+            parentsDict is the information from where intersection proceds
         """
         size1 = len(ids1)
         size2 = len(ids2) if clsSize2 is None else clsSize2
@@ -227,16 +229,17 @@ class XmippProtConsensusClasses3D(EMProtocol):
             rep = rep2
             clsSize = size2
 
-        if rep1[0] in parents.keys():
-            parents[rep1[0]].append(rep1[1])
-        else:
-            parents[rep1[0]] = [rep1[1]]
-
         if clsSize2 is None:
-            if rep2[0] in parents.keys():
-                parents[rep2[0]].append(rep2[1])
+            parentsDict = {}
+            if rep2[0] in parentsDict.keys():
+                parentsDict[rep2[0]].append(rep2[1])
             else:
-                parents[rep2[0]] = [rep2[1]]
+                parentsDict[rep2[0]] = [rep2[1]]
+
+        if rep1[0] in parentsDict.keys():
+            parentsDict[rep1[0]].append(rep1[1])
+        else:
+            parentsDict[rep1[0]] = [rep1[1]]
 
         print(" ")
         print(" - Intersection of cl%d of set%d (%d part.) and "
@@ -246,7 +249,7 @@ class XmippProtConsensusClasses3D(EMProtocol):
                % (size1, size2, size1<size2))
         print("      -> from set %d calss %d, with %d parts. in the intersection." 
                % (rep[0], rep[1], len(inter)))
-        print "parents: ", parents
+        print "parents: ", parentsDict
         print(" -  -  -  -  -  -  -  -  -  -")
 
-        return (len(inter), inter, parents, clsSize, rep)
+        return (len(inter), inter, parentsDict, clsSize, rep)
