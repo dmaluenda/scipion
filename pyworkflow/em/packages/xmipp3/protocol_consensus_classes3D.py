@@ -110,7 +110,7 @@ class XmippProtConsensusClasses3D(EMProtocol):
                 parents = currTuple[2]
                 cl2Size = currTuple[3]
                 rep2 = currTuple[4]
-                print " "
+                print " "  # Locura
                 print parents
                 interTuple = self.intersectClasses(rep1, ids1, rep2, ids2, 
                                                    parents, cl2Size)
