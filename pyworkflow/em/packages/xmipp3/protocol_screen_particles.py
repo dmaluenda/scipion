@@ -53,6 +53,8 @@ class XmippProtScreenParticles(ProtProcessParticles):
     REJ_MAXZSCORE = 1
     REJ_PERCENTAGE = 2
     REJ_PERCENTAGE_SSNR = 1
+    REJ_VARIANCE = 1
+    REJ_VARGINI = 2
 
     # --------------------------- DEFINE param functions ---------------------
 
@@ -106,8 +108,16 @@ class XmippProtScreenParticles(ProtProcessParticles):
                       label='Add features', expertLevel=LEVEL_ADVANCED,
                       help='Add features used for the ranking to each one '
                            'of the input particles')
+        form.addParam('autoParRejectionVar', EnumParam, default=self.REJ_NONE,
+                      choices=['None', 'Variance', 'Var. and Gini'],
+                      label='Automatic particle rejection based on Variance',
+                      expertLevel=LEVEL_ADVANCED,
+                      help='How to automatically reject particles based on '
+                           'Variance. It can be:\n'
+                           '  None (no rejection)\n'
+                           '  Variance (taking into account only the variance)\n'
+                           '  Var. and Gini (taking into account also the Gini coeff.)')
         form.addParallelSection(threads=0, mpi=0)
-
 
     def _getDefaultParallel(self):
         """This protocol doesn't have mpi version"""
@@ -268,7 +278,6 @@ class XmippProtScreenParticles(ProtProcessParticles):
         self._updateOutputSet('outputParticles', outSet, streamMode)
 
     def _initializeZscores(self):
-
         # Store the set for later access , ;-(
         self.minZScore = Float()
         self.maxZScore = Float()
@@ -304,7 +313,15 @@ class XmippProtScreenParticles(ProtProcessParticles):
         return summary
     
     def _validate(self):
-        pass
+        validateMsgs = []
+        if self.autoParRejectionVar != self.REJ_NONE:
+            part = self.inputParticles.get().getFirstItem()
+            if not part.hasAttribute('_xmipp_scoreByVariance'):
+                validateMsgs.append('The auto-rejection by Variance can not be '
+                                    'done because the particles have not the '
+                                    'scoreByVariance attribute. Use Xmipp to '
+                                    'extract the particles.')
+        return validateMsgs
         
     def _citations(self):
         return ['Vargas2013b']
@@ -335,3 +352,42 @@ class XmippProtScreenParticles(ProtProcessParticles):
             methods.append('Output set is %s.'
                            % self.getObjectTag('outputParticles'))
         return methods
+
+
+
+
+
+
+# --------------------------------------------------------------------------------------------------------
+
+
+    #  DAVID : OLD version (none streaming)
+    def rejectByVariance(self, inputId):
+        if self.autoParRejectionVar != self.REJ_NONE:
+            import numpy as np
+            from scipy import signal
+
+            imagesMd = self._getPath('images.xmd')
+            mdata = md.xmipp.MetaData(imagesMd)
+            varList = []
+            giniList = []
+            for objId in mdata:
+                varList.append(mdata.getValue(md.MDL_SCORE_BY_VAR, objId))
+                giniList.append(mdata.getValue(md.MDL_SCORE_BY_GINI, objId))
+
+            if self.autoParRejectionVar == self.REJ_VARIANCE:
+                hist, bin_edges = np.histogram(varList, bins=50)
+            else:
+                vargini = [var*(1-gini) for var, gini in zip(varList, giniList)]
+                hist, bin_edges = np.histogram(vargini, bins=50)
+
+            peakind = signal.find_peaks_cwt(hist, np.arange(1,10))
+
+            idx = (np.abs(hist[peakind[-1]:]-hist.max()/3)).argmin() + peakind[-1]
+            threshold = bin_edges[idx]
+            print('Variance threshold = %f' % threshold)
+            for objId in mdata:
+                if mdata.getValue(md.MDL_SCORE_BY_VAR, objId)>threshold:
+                    mdata.setValue(md.MDL_ENABLED, -1, objId)
+
+            mdata.write(imagesMd)
