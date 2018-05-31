@@ -104,10 +104,6 @@ class XmippProtScreenParticles(ProtProcessParticles):
                            'SSNR are automatically disabled.',
                       validators=[Range(0, 100, error="Percentage must be "
                                                       "between 0 and 100.")])
-        form.addParam('addFeatures', BooleanParam, default=False,
-                      label='Add features', expertLevel=LEVEL_ADVANCED,
-                      help='Add features used for the ranking to each one '
-                           'of the input particles')
         form.addParam('autoParRejectionVar', EnumParam, default=self.REJ_NONE,
                       choices=['None', 'Variance', 'Var. and Gini'],
                       label='Automatic particle rejection based on Variance',
@@ -117,6 +113,10 @@ class XmippProtScreenParticles(ProtProcessParticles):
                            '  None (no rejection)\n'
                            '  Variance (taking into account only the variance)\n'
                            '  Var. and Gini (taking into account also the Gini coeff.)')
+        form.addParam('addFeatures', BooleanParam, default=False,
+                      label='Add features', expertLevel=LEVEL_ADVANCED,
+                      help='Add features used for the ranking to each one '
+                           'of the input particles')
         form.addParallelSection(threads=0, mpi=0)
 
     def _getDefaultParallel(self):
@@ -271,6 +271,10 @@ class XmippProtScreenParticles(ProtProcessParticles):
         if self.autoParRejectionSSNR == self.REJ_PERCENTAGE_SSNR:
             args += "--ssnrpercent " + str(self.percentageSSNR.get())
         self.runJob("xmipp_image_ssnr", args)
+
+        if self.autoParRejectionVar != self.REJ_NONE:
+            self.rejectByVariance(fnInputMd, fnOutputMd)
+
         streamMode = Set.STREAM_CLOSED \
             if getattr(self, 'finished', False) else Set.STREAM_OPEN
         outSet = self._loadOutputSet(SetOfParticles, 'outputParticles.sqlite',
@@ -354,40 +358,37 @@ class XmippProtScreenParticles(ProtProcessParticles):
         return methods
 
 
+    # -------------------------- UTILS functions ------------------------------
+    def rejectByVariance(self, inputMdFn, outputMdFn):
+        import numpy as np
 
+        print('Rejecting by variance:')
+        mdata = md.xmipp.MetaData(inputMdFn)
+        varList = []
+        giniList = []
+        print('  - Reading metadata')
+        for objId in mdata:
+            varList.append(mdata.getValue(md.MDL_SCORE_BY_VAR, objId))
+            giniList.append(mdata.getValue(md.MDL_SCORE_BY_GINI, objId))
 
+        print('  - Rejecting')
+        if self.autoParRejectionVar == self.REJ_VARIANCE:
+            hist, bin_edges = np.histogram(varList, bins=200)
+        else:
+            vargini = [var*(1-gini) for var, gini in zip(varList, giniList)]
+            hist, bin_edges = np.histogram(vargini, bins=200)
 
+        histRight = hist
+        histRight[0:hist.argmax()] = 0
 
-# --------------------------------------------------------------------------------------------------------
-
-
-    #  DAVID : OLD version (none streaming)
-    def rejectByVariance(self, inputId):
-        if self.autoParRejectionVar != self.REJ_NONE:
-            import numpy as np
-            from scipy import signal
-
-            imagesMd = self._getPath('images.xmd')
-            mdata = md.xmipp.MetaData(imagesMd)
-            varList = []
-            giniList = []
-            for objId in mdata:
-                varList.append(mdata.getValue(md.MDL_SCORE_BY_VAR, objId))
-                giniList.append(mdata.getValue(md.MDL_SCORE_BY_GINI, objId))
-
-            if self.autoParRejectionVar == self.REJ_VARIANCE:
-                hist, bin_edges = np.histogram(varList, bins=50)
+        idx = (np.abs(histRight-hist.max()/4)).argmin()
+        threshold = bin_edges[idx]
+        print('      > Variance threshold = %f' % threshold)
+        print('  - Writing metadata')
+        for objId in mdata:
+            if mdata.getValue(md.MDL_SCORE_BY_VAR, objId)>threshold:
+                mdata.setValue(md.MDL_ENABLED, -1, objId)
             else:
-                vargini = [var*(1-gini) for var, gini in zip(varList, giniList)]
-                hist, bin_edges = np.histogram(vargini, bins=50)
+                mdata.setValue(md.MDL_ENABLED, 1, objId)
 
-            peakind = signal.find_peaks_cwt(hist, np.arange(1,10))
-
-            idx = (np.abs(hist[peakind[-1]:]-hist.max()/3)).argmin() + peakind[-1]
-            threshold = bin_edges[idx]
-            print('Variance threshold = %f' % threshold)
-            for objId in mdata:
-                if mdata.getValue(md.MDL_SCORE_BY_VAR, objId)>threshold:
-                    mdata.setValue(md.MDL_ENABLED, -1, objId)
-
-            mdata.write(imagesMd)
+        mdata.write(outputMdFn)
