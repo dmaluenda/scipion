@@ -241,7 +241,6 @@ class DeepTFSupervised(object):
       print("Initial loss %f"%stepLoss)
       self.testPerformance(i_global, trainDataBatch,dataManagerTest)
     else:
-      print("Model will be used as it is, with no more training")
       return
 
     time0 = time.time()
@@ -378,6 +377,7 @@ class DataManager(object):
       self.nFalse= 2**9
 
   def colectMetadata(self, dictData):
+
     mdList=[]
     fnamesList_merged=[]
     weightsList_merged= []
@@ -598,4 +598,5 @@ class DataManager(object):
             break
     if n>0:
         yield batchStack[:n,...], batchLabels[:n,...]
+
 
