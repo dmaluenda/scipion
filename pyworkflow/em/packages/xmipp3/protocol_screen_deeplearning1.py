@@ -33,6 +33,7 @@ from pyworkflow.em.protocol import ProtProcessParticles
 import pyworkflow.em.metadata as md
 from pyworkflow.em.packages.xmipp3.convert import writeSetOfParticles, setXmippAttributes
 
+WRITE_TEST_SCORES=True
 
 class XmippProtScreenDeepLearning1(ProtProcessParticles):
     """ Protocol for screening particles using deep learning. """
@@ -99,14 +100,14 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
         else:
             use_cuda=False
 
-        form.addParam('nEpochs', params.FloatParam, label="Number of epochs", default=10.0, expertLevel=params.LEVEL_ADVANCED,
+        form.addParam('nEpochs', params.FloatParam, label="Number of epochs", default=5.0, expertLevel=params.LEVEL_ADVANCED,
                       condition="not doContinue or keepTraining", help='Number of epochs for neural network training.')
-        form.addParam('learningRate', params.FloatParam, label="Learning rate", default=1e-3, expertLevel=params.LEVEL_ADVANCED,
+        form.addParam('learningRate', params.FloatParam, label="Learning rate", default=1e-4, expertLevel=params.LEVEL_ADVANCED,
                       condition="not doContinue or keepTraining", help='Learning rate for neural network training')
-        form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=3, expertLevel=params.LEVEL_ADVANCED,
+        form.addParam('nModels', params.IntParam, label="Number of models for ensemble", default=2, expertLevel=params.LEVEL_ADVANCED,
                       condition="not doContinue",
-                      help='Number of models to fit in order to build an ensamble. Tipical values are 3 to 10. The more the better'
-                      'until a point where no gain is obtained')
+                      help='Number of models to fit in order to build an ensamble. Tipical values are 1 to 5. The more the better'
+                      'until a point where no gain is obtained. Each model increases running time linearly')
 
         form.addSection(label='testingData')
         form.addParam('doTesting', params.BooleanParam, default=False,
@@ -195,25 +196,18 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             testDataManager= DataManager(posSetDict= posTestDict,negSetDict= negTestDict)
         else:
             testDataManager= None
-        numberOfBatches = trainDataManager.getNBatches(nEpochs)
         self.writeNetShape(trainDataManager.shape, trainDataManager.nTrue, numModels)
         assert numModels>=1, "Error, nModels<1"
-        for i in range(numModels):
-            print("Training model %d/%d"%((i+1), numModels))
-            nnet = DeepTFSupervised(rootPath=self._getExtraPath("nnetData"), modelNum=i)
-            try:
-                nnet.createNet(trainDataManager.shape[0], trainDataManager.shape[1], trainDataManager.shape[2], trainDataManager.nTrue)
-                nnet.startSessionAndInitialize(numberOfThreads)
-            except tf_intarnalError as e:
-                if e._error_code==13:
-                    raise Exception("Out of gpu Memory. gpu # %d"%(self.gpuToUse.get()))
-                else:
-                    raise e
-            nnet.trainNet(numberOfBatches, trainDataManager, learningRate, testDataManager, self.auto_stopping.get())
-            nnet.close(saveModel= False) #Models will be automatically saved during training, so True no needed
-#            self.predict( posTestDict, negTestDict, posTestDict)
-#            raise ValueError("Debug mode")
-            del nnet
+        try:
+            nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"),
+                                    numberOfModels=numModels)
+            nnet.trainNet(nEpochs, trainDataManager, learningRate, testDataManager, self.auto_stopping.get())
+        except tf_intarnalError as e:
+            if e._error_code==13:
+                raise Exception("Out of gpu Memory. gpu # %d"%(self.gpuToUse.get()))
+            else:
+                raise e
+        del nnet
 
     def writeNetShape(self, shape, nTrue, nModels):
         makeFilePath(self._getExtraPath("nnetData/nnetInfo.txt") )
@@ -231,7 +225,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
     def predict(self, posTestDict, negTestDict, setPredict):
         from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron
         import numpy as np
-        from sklearn.metrics import accuracy_score, roc_auc_score
+
         if hasattr(self, 'gpuToUse'):
             updateEnviron( self.gpuToUse.get() )
             numberOfThreads=None
@@ -239,82 +233,36 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             updateEnviron(None)
             numberOfThreads=self.numberOfThreads.get()
 
-        predictDataManager= DataManager( posSetDict= setPredict,
-                                         negSetDict= None)
-
+        predictDataManager= DataManager( posSetDict= setPredict, negSetDict= None)
         dataShape, nTrue, numModels= self.loadNetShape()
 
-        resultsDictPos={}
-        resultsDictNeg={}
-        for i in range(numModels):
-            print("Predicting with model %d/%d"%((i+1), numModels))
-            nnet = DeepTFSupervised(rootPath=self._getExtraPath("nnetData"), modelNum=i)
-            nnet.createNet( dataShape[0], dataShape[1], dataShape[2], nTrue)
-            nnet.startSessionAndInitialize(numberOfThreads)
-            y_pred, labels, typeAndIdList = nnet.predictNet(predictDataManager)
-            nnet.close(saveModel= False)
 
-            for score, label, (mdIsPosType, mdId, mdNumber) in zip(y_pred , labels, typeAndIdList):
-              if mdIsPosType==True:
-                 try:
-                     resultsDictPos[(mdId, mdNumber)]+= float(score)/float(numModels)
-                 except KeyError:
-                     resultsDictPos[(mdId, mdNumber)]= float(score)/float(numModels)
-              else:
-                 try:
-                     resultsDictNeg[(mdId, mdNumber)]+= float(score)/float(numModels)
-                 except KeyError:
-                     resultsDictNeg[(mdId, mdNumber)]= float(score)/float(numModels)
-
+        nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"), 
+                                numberOfModels=numModels)
+        y_pred, label_Id_dataSetNumIterator= nnet.predictNet(predictDataManager)
+        
         metadataPosList, metadataNegList= predictDataManager.getMetadata(None)
-        for (mdId, mdNumber) in resultsDictPos:
-             metadataPosList[mdNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, resultsDictPos[(mdId, mdNumber)], mdId)
+        for score, (isPositive, mdId, dataSetNumber) in zip(y_pred, label_Id_dataSetNumIterator):
+            if isPositive==True:
+                metadataPosList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
+            else:
+                metadataNegList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
 
-        for (mdId, mdNumber) in resultsDictNeg:
-             metadataNegList[mdNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, resultsDictNeg[(mdId, mdNumber)], mdId)
-
+        assert len(metadataPosList)==1, "Error, predict setOfParticles must contain one single object"
         metadataPosList[0].write(self._getPath("particles.xmd"))
-        assert len(metadataPosList)==1, "Just one SetOfParticles to predict allowed"
+
         if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
           testDataManager= DataManager(posSetDict= posTestDict,
-                               negSetDict= negTestDict)
+                               negSetDict= negTestDict, validationFraction=0)
+          print("Evaluating test set")
+          global_auc, global_acc, y_labels, y_pred_all= nnet.evaluateNet(testDataManager)
+          if WRITE_TEST_SCORES:
+            makeFilePath(self._getExtraPath("nnetData/testPredictions.txt") )
+            with open( self._getExtraPath("nnetData/testPredictions.txt"), "w") as f:
+              f.write("label score\n")
+              for l, s in zip(y_labels, y_pred_all):
+                f.write("%d %f\n"%(l, s))
 
-          nnet.close(saveModel= False)
-          scores_list=[]
-          labels_list=[]
-          cum_acc_list=[]
-          cum_auc_list=[]
-          for i in range(numModels):
-            print("Predicting test data with model %d/%d"%((i+1), numModels))
-            labels_list.append([])
-            scores_list.append([])
-            nnet = DeepTFSupervised(rootPath=self._getExtraPath("nnetData"), modelNum=i)
-            nnet.createNet( dataShape[0], dataShape[1], dataShape[2], nTrue)
-            nnet.startSessionAndInitialize(numberOfThreads)
-            y_pred, labels, typeAndIdList = nnet.predictNet(testDataManager)
-            scores_list[-1].append(y_pred)
-            labels= [ 0 if label[0]==1.0 else 1 for label in labels]
-            labels_list[-1].append(labels)
-            curr_auc= roc_auc_score(labels, y_pred)
-            curr_acc= accuracy_score(labels, [1 if y>=0.5 else 0 for y in y_pred])
-            cum_acc_list.append(curr_acc)
-            cum_auc_list.append(curr_auc)
-            print("Model %d test accuracy: %f  auc: %f"%(i, curr_acc, curr_auc))
-            nnet.close(saveModel= False)
-          labels= np.mean( labels_list, axis=0)[0,:]
-          assert np.all( (labels==1) | (labels==0)), "Error, labels mismatch"
-          scores= np.mean(scores_list, axis=0)[0,:]
-          auc_val= roc_auc_score(labels, scores)
-          makeFilePath(self._getExtraPath("nnetData/testPredictions.txt") )
-          with open( self._getExtraPath("nnetData/testPredictions.txt"), "w") as f:
-            f.write("label score\n")
-            for l, s in zip(labels, scores):
-              f.write("%d %f\n"%(l, s))
-          scores[ scores>=0.5]=1
-          scores[ scores<0.5]=0
-          print(">>>>>>>>>>>>\nEnsemble test accuracy            : %f  auc: %f"%(accuracy_score(labels, scores) , auc_val))
-          print("Mean single model test accuracy: %f  auc: %f"%(np.mean(cum_acc_list) , np.mean(cum_auc_list)))
-              
     def createOutputStep(self):
         imgSet = self.predictSetOfParticles.get()
         partSet = self._createSetOfParticles()

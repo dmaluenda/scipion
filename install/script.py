@@ -356,12 +356,16 @@ cythongsl = env.addPipModule('cythongsl','0.2.1',
                          default=False, deps=[cython])
 scikit_learn=env.addPipModule('scikit-learn', '0.17', target='scikit_learn*',
              default=False, deps=[scipy, cython])
+unittest2= env.addPipModule('unittest2', '0.5.1', target='unittest2*', default=False)
+h5py= env.addPipModule('h5py', '2.8.0rc1', target='h5py*', default=False, deps=[unittest2])
+keras=env.addPipModule('keras', '2.1.5', target='keras*', default=False, deps=[h5py])
 
 if get('CUDA'):
+    #works with CUDNN>=5.0
     url = 'https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow_gpu-1.4.0rc1-cp27-none-linux_x86_64.whl'
     pipCmd = "python %s/pip install --upgrade %s" % (env.getPythonPackagesFolder(), url)
     env.addPipModule('tensorflow', '1.4.0', target='tensorflow', pipCmd=pipCmd,
-             default=False)
+             default=False, deps=[keras, h5py])
 else:
     url = 'https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.4.0rc1-cp27-none-linux_x86_64.whl'
     pipCmd = "python %s/pip install --upgrade %s" % (env.getPythonPackagesFolder(), url)
@@ -369,9 +373,7 @@ else:
              default=False)
 
 env.addPipModule('joblib', '0.11', target='joblib*', default=False)
-h5py= env.addPipModule('h5py', '2.8.0rc1', target='h5py*', default=False)
-env.addPipModule('tflearn', '0.3', target='tflearn*', default=False, deps=[h5py])
-env.addPipModule('keras', '2.1.5', target='keras*', default=False, deps=[h5py])
+
 
 
 #  ************************************************************************
