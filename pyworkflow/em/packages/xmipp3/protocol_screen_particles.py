@@ -49,6 +49,8 @@ class XmippProtScreenParticles(ProtProcessParticles):
 
     # Automatic Particle rejection enum
     ZSCORE_CHOICES = ['None', 'MaxZscore', 'Percentage']
+    SSNR_CHOICES = ['None', 'Percentage']
+    VAR_CHOICES = ['None', 'Variance', 'Var. and Gini']
     REJ_NONE = 0
     REJ_MAXZSCORE = 1
     REJ_PERCENTAGE = 2
@@ -88,7 +90,7 @@ class XmippProtScreenParticles(ProtProcessParticles):
                       validators=[Range(0, 100, error="Percentage must be "
                                                       "between 0 and 100.")])
         form.addParam('autoParRejectionSSNR', EnumParam,
-                      choices=['None', 'Percentage'],
+                      choices=self.SSNR_CHOICES,
                       label="Automatic particle rejection based on SSNR",
                       default=self.REJ_NONE, display=EnumParam.DISPLAY_COMBO,
                       expertLevel=LEVEL_ADVANCED,
@@ -105,7 +107,7 @@ class XmippProtScreenParticles(ProtProcessParticles):
                       validators=[Range(0, 100, error="Percentage must be "
                                                       "between 0 and 100.")])
         form.addParam('autoParRejectionVar', EnumParam, default=self.REJ_NONE,
-                      choices=['None', 'Variance', 'Var. and Gini'],
+                      choices=self.VAR_CHOICES,
                       label='Automatic particle rejection based on Variance',
                       expertLevel=LEVEL_ADVANCED,
                       help='How to automatically reject particles based on '
@@ -273,7 +275,28 @@ class XmippProtScreenParticles(ProtProcessParticles):
         self.runJob("xmipp_image_ssnr", args)
 
         if self.autoParRejectionVar != self.REJ_NONE:
-            self.rejectByVariance(fnInputMd, fnOutputMd)
+            print('Rejecting by variance:')
+            if self.outputSize == 0:
+                varList = []
+                giniList = []
+                print('  - Reading metadata')
+                mdata = md.xmipp.MetaData(fnInputMd)
+                for objId in mdata:
+                    varList.append(mdata.getValue(md.MDL_SCORE_BY_VAR, objId))
+                    giniList.append(mdata.getValue(md.MDL_SCORE_BY_GINI, objId))
+
+                if self.autoParRejectionVar == self.REJ_VARIANCE:
+                    print len(varList)
+                    valuesList = varList
+                    mdLabel = md.MDL_SCORE_BY_VAR
+                else:  # not working pretty well
+                    valuesList = [var*(1-gini) for var, gini in zip(varList, giniList)]
+                    mdLabel = md.MDL_SCORE_BY_GINI
+
+                self.varThreshold = histThresholding(valuesList)
+                print('  - Variance threshold: %f' % self.varThreshold)
+
+            rejectByVariance(fnInputMd, fnOutputMd, mdLabel, self.varThreshold)
 
         streamMode = Set.STREAM_CLOSED \
             if getattr(self, 'finished', False) else Set.STREAM_OPEN
@@ -299,21 +322,38 @@ class XmippProtScreenParticles(ProtProcessParticles):
     # -------------------------- INFO functions ------------------------------
     def _summary(self):
         summary = []
+        sumRejMet = {}
         if self.autoParRejection is not None:
-            summary.append("Rejection method: " +
-                           self.ZSCORE_CHOICES[self.autoParRejection.get()])
+            sumRejMet['Zscore'] = ("Zscore rejection method: " +
+                               self.ZSCORE_CHOICES[self.autoParRejection.get()])
+        if self.autoParRejectionSSNR is not None:
+            sumRejMet['SSNR'] = ("SSNR rejection method: " +
+                             self.SSNR_CHOICES[self.autoParRejectionSSNR.get()])
+        if self.autoParRejectionVar is not None:
+            sumRejMet['Var'] = ("Variance rejection method: " +
+                               self.VAR_CHOICES[self.autoParRejectionVar.get()])
 
         if not hasattr(self, 'outputParticles'):
+            summary += sumRejMet.values()
             summary.append("Output particles not ready yet.")
         else:
+            summary.append(sumRejMet['zScore'])
             if hasattr(self, 'sumZScore'):
-                summary.append("The minimum ZScore is %.2f" % self.minZScore)
-                summary.append("The maximum ZScore is %.2f" % self.maxZScore)
+                summary.append(" - The minimum ZScore is %.2f" % self.minZScore)
+                summary.append(" - The maximum ZScore is %.2f" % self.maxZScore)
                 meanZScore = self.sumZScore.get() * 1.0 / len(self.outputParticles)
-                summary.append("The mean ZScore is %.2f" % meanZScore)
+                summary.append(" - The mean ZScore is %.2f" % meanZScore)
             else:
+                summary += sumRejMet.values()
                 summary.append(
-                    "Summary values not calculated during processing.")
+                    "   Summary values not calculated during processing.")
+            summary.append(sumRejMet['SSNR'])
+            summary.append(sumRejMet['Var'])
+            if self.autoParRejectionVar != self.REJ_NONE:
+                if hasattr(self, 'varThreshold'):
+                    summary.append(" - Var. threshold: %.2f" % self.varThreshold)
+                else:
+                    summary.append("   Variance threshold not calculed yet.")
         return summary
     
     def _validate(self):
@@ -358,37 +398,35 @@ class XmippProtScreenParticles(ProtProcessParticles):
         return methods
 
 
-    # -------------------------- UTILS functions ------------------------------
-    def rejectByVariance(self, inputMdFn, outputMdFn):
-        import numpy as np
+# -------------------------- UTILS functions ------------------------------
+def histThresholding(valuesList, nBins=256, portion=4):
+    """ returns the threshold to reject those values above a portionth of 
+        the peak. i.e: if portion is 4, the threshold correponds to the
+        4th of the peak (in the right part).
+    """
+    import numpy as np
 
-        print('Rejecting by variance:')
-        mdata = md.xmipp.MetaData(inputMdFn)
-        varList = []
-        giniList = []
-        print('  - Reading metadata')
-        for objId in mdata:
-            varList.append(mdata.getValue(md.MDL_SCORE_BY_VAR, objId))
-            giniList.append(mdata.getValue(md.MDL_SCORE_BY_GINI, objId))
+    print len(valuesList)/nBins
+    while len(valuesList)*1.0/nBins < 5:
+        nBins = nBins/2
 
-        print('  - Rejecting')
-        if self.autoParRejectionVar == self.REJ_VARIANCE:
-            hist, bin_edges = np.histogram(varList, bins=200)
-        else:
-            vargini = [var*(1-gini) for var, gini in zip(varList, giniList)]
-            hist, bin_edges = np.histogram(vargini, bins=200)
+    print('number of bins in histogram: %d' % nBins)
 
-        histRight = hist
-        histRight[0:hist.argmax()] = 0
+    hist, bin_edges = np.histogram(valuesList, bins=nBins)
 
-        idx = (np.abs(histRight-hist.max()/4)).argmin()
-        threshold = bin_edges[idx]
-        print('      > Variance threshold = %f' % threshold)
-        print('  - Writing metadata')
-        for objId in mdata:
-            if mdata.getValue(md.MDL_SCORE_BY_VAR, objId)>threshold:
-                mdata.setValue(md.MDL_ENABLED, -1, objId)
-            else:
-                mdata.setValue(md.MDL_ENABLED, 1, objId)
+    histRight = hist
+    histRight[0:hist.argmax()] = 0
 
-        mdata.write(outputMdFn)
+    idx = (np.abs(histRight-hist.max()/portion)).argmin()
+    return bin_edges[idx] 
+
+def rejectByVariance(inputMdFn, outputMdFn, mdLabel, threshold):
+    """ Sets MDL_ENABLED to -1 to those items with a higher variance than
+        the threshold
+    """
+    mdata = md.xmipp.MetaData(inputMdFn)
+    for objId in mdata:
+        if mdata.getValue(mdLabel, objId)>threshold:
+            mdata.setValue(md.MDL_ENABLED, -1, objId)
+
+    mdata.write(outputMdFn)
