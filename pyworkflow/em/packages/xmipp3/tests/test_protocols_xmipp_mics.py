@@ -367,7 +367,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        boxSize=110,
                                        downsampleType=SAME_AS_PICKING,
                                        doInvert=False,
-                                       doFlip=False)
+                                       doFlip=False,
+                                       numberOfThreads=2)
         protExtract.setObjLabel("extract-same as picking")
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
         self.launchProtocol(protExtract)
@@ -404,7 +405,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        boxSize=550,
                                        downsampleType=OTHER,
                                        doInvert=False,
-                                       doFlip=False)
+                                       doFlip=False,
+                                       numberOfThreads=2)
         protExtract.setObjLabel("extract-original")
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
         protExtract.inputMicrographs.set(self.protImport.outputMicrographs)
@@ -446,7 +448,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        downsampleType=OTHER,
                                        doInvert=False,
                                        doBorders=False,
-                                       doFlip=False)
+                                       doFlip=False,
+                                       numberOfThreads=2)
 
         protExtract.setObjLabel("extract-avoid borders")
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
@@ -491,7 +494,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        doDownsample=True,
                                        downFactor=downFactor,
                                        doInvert=False,
-                                       doFlip=False)
+                                       doFlip=False,
+                                       numberOfThreads=2)
         # Get all the micrographs ids to validate that all particles
         # has the micId properly set
         micsId = [mic.getObjId() for mic in
@@ -545,7 +549,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        doInvert=False,
                                        doFlip=False,
                                        extractNoise=True,
-                                       patchSize=500)
+                                       patchSize=500,
+                                       numberOfThreads=2)
 
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
         protExtract.inputMicrographs.set(self.protImport.outputMicrographs)
@@ -563,7 +568,8 @@ class TestXmippExtractParticles(TestXmippBase):
                                        boxSize=110,
                                        downsampleType=SAME_AS_PICKING,
                                        doInvert=False,
-                                       doFlip=True)
+                                       doFlip=True,
+                                       numberOfThreads=2)
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
         protExtract.ctfRelations.set(self.protCTF.outputCTF)
         protExtract.setObjLabel("extract-ctf")
@@ -629,7 +635,8 @@ class TestXmippEliminatingEmptyParticles(TestXmippBase):
                                        boxSize=110,
                                        downsampleType=SAME_AS_PICKING,
                                        doInvert=False,
-                                       doFlip=False)
+                                       doFlip=False,
+                                       numberOfThreads=2)
         protExtract.inputCoordinates.set(self.protPP.outputCoordinates)
         self.launchProtocol(protExtract)
 
