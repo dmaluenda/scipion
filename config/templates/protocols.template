@@ -62,6 +62,7 @@ Protocols SPA = [
 		    {"tag": "protocol", "value": "ProtGemPicker", "text": "default"},
 		    {"tag": "protocol", "value": "ProtGautomatch", "text": "default"},
 			{"tag": "protocol", "value": "XmippProtConsensusPicking",   "text": "default"},
+			{"tag": "protocol", "value": "XmippProtScreenDeepConsensus",   "text": "default"},
 			{"tag": "protocol", "value": "XmippProtPickNoise", "text": "default"},
 			{"tag": "protocol", "value": "ProtExtractCoords",   "text": "default"},
 			{"tag": "protocol", "value": "XmippProtParticlePickingPairs",  "text": "default"},

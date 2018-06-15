@@ -82,7 +82,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                       help='Select the set of putative particles particles to classify.')
 
         form.addParam('auto_stopping',params.BooleanParam, default=True, condition="not doContinue or keepTraining",
-                      label='Auto stop training when convergency is detected?',
+                      label='Auto stop training when convergency is detected?', expertLevel=params.LEVEL_ADVANCED,
                       help='If you set to *Yes*, the program will automatically stop training'
                       'if there is no improvement for consecutive 2 epochs, learning rate will be decreased'
                       'by a factor 10. If learningRate_t < 0.01*learningrate_0 training will stop. Warning: '

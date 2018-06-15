@@ -29,18 +29,20 @@
 # *
 # **************************************************************************
 
-from os.path import exists
-
+import os
 from pyworkflow.object import Pointer
 import pyworkflow.utils as pwutils
 from pyworkflow.utils.path import cleanPath
 from pyworkflow.protocol.constants import (STEPS_PARALLEL, LEVEL_ADVANCED)
 import pyworkflow.protocol.params as params
 from pyworkflow.em.protocol import ProtParticlePicking
-
+from pyworkflow.em.data import SetOfCoordinates, Coordinate
+import pyworkflow.em.metadata as MD
 from convert import writeSetOfCoordinates, readSetOfCoordinates
 from xmipp3 import XmippProtocol
-
+import numpy as np
+from scipy.spatial.distance import cdist
+from pyworkflow.object import Float
 
 class XmippProtPickNoise(ProtParticlePicking, XmippProtocol):
     """Protocol to pick noise particles"""
@@ -60,7 +62,7 @@ class XmippProtPickNoise(ProtParticlePicking, XmippProtocol):
                       label="Input coordinates",
                       help='Set of true particle coordinates. Noise coordinates are chosen'
                            'so that they are sufficiently far from particles')
-
+        
         form.addParam('extractNoiseNumber', params.IntParam, default=-1, expertLevel=LEVEL_ADVANCED,
                       label='Number of noise particles',
                       help='Number of noise particles to extract from each micrograph. '
@@ -71,49 +73,34 @@ class XmippProtPickNoise(ProtParticlePicking, XmippProtocol):
     #--------------------------- INSERT steps functions ------------------------
     def _insertAllSteps(self):
         """for each micrograph insert the steps to preprocess it"""
-        # Write pos files for each micrograph
-        firstStepId = self._insertFunctionStep('writePosFilesStep')
-        
-        # For each micrograph insert the steps, run in parallel
-        deps = []
-        
-        boxSize = self.inputCoordinates.get().getBoxSize()
-        for mic in self.getInputMicrographs():
-            localDeps = [firstStepId]
- 
-            baseMicName = pwutils.removeBaseExt(mic.getFileName())
-            deps.append(self._insertFunctionStep('pickNoiseStep', 
-                                                 mic.getObjId(), baseMicName, mic.getFileName(), self.extractNoiseNumber.get(), boxSize,
-                                                 prerequisites=localDeps))
-# 
-        self._insertFunctionStep('_createOutput', self._getExtraPath(),
-                                 prerequisites=deps)
+        #Insert pickNoise steps using function
+        deps= pickAllNoiseWorker(self, self.inputCoordinates.get(), self._getExtraPath(), self.extractNoiseNumber.get(),
+                                 insertStepOrRun="insert")
+
+        self._insertFunctionStep('createOutputStep', prerequisites= deps )
+
 
     #--------------------------- STEPS functions -------------------------------
     def writePosFilesStep(self):
         """ Write the pos file for each micrograph on metadata format. """
-        writeSetOfCoordinates(self._getExtraPath(), self.inputCoordinates.get(), scale=self.inputCoordinates.get().getBoxSize())
-                        
-    def pickNoiseStep(self, micId, baseMicName, micrographToExtract, extractNoiseNumber, boxSize):
-        """ Pick noise from one micrograph """
-        outputRoot = str(self._getExtraPath(baseMicName))
-        fnPosFile = self._getExtraPath(baseMicName + ".pos")
+        writePosFilesStepWorker(self.inputCoordinates.get(), self._getExtraPath())
 
-        # If it has coordinates extract the particles      
-        particlesMd = 'particles@%s' % fnPosFile
+    def pickNoiseStep(self, mic_id, mic_fname, mic_shape, outputRoot, extractNoiseNumber, boxSize, coords_in_mic_list):
+        pickNoiseOneMic( mic_id, mic_fname, mic_shape, outputRoot, extractNoiseNumber, boxSize, coords_in_mic_list)      
+        
+    def createOutputStep( self):
+      noiseCoords= writeSetOfCoordsFromFnames(txt_coords_dirPath=self._getExtraPath(), 
+                                          setOfInputCoords=self.inputCoordinates.get())
 
-        if exists(fnPosFile):
-            args = " -i %s --pos %s" % (micrographToExtract, particlesMd)
-            args += " -o %s --Xdim %d" % (outputRoot, boxSize)
-            args += " --extractNoise %d"%extractNoiseNumber
-
-            self.runJob("xmipp_micrograph_scissor", args)
-            cleanPath("%s.stk"%outputRoot)
-            cleanPath("%s.xmd"%outputRoot)
-        else:
-            self.warning("The micrograph %s hasn't coordinate file! " % baseMicName)
-            self.warning("Maybe you picked over a subset of micrographs")
-    
+      coordSet = self._createSetOfCoordinates(self.inputCoordinates.get().getMicrographs() )
+      coordSet.copyInfo(noiseCoords)
+      coordSet.copyItems(noiseCoords, itemDataIterator=MD.iterRows(self._getPath(noiseCoords.getFileName()),
+                                                                   sortByLabel=MD.MDL_ITEM_ID))
+      coordSet.setBoxSize(noiseCoords.getBoxSize())      
+      self._defineOutputs(outputCoordinates=coordSet)
+      self._defineSourceRelation(self.inputCoordinates.get(), coordSet)
+      
+      
     def getInputMicrographs(self):
         return self.inputCoordinates.get().getMicrographs()
     
@@ -130,3 +117,140 @@ class XmippProtPickNoise(ProtParticlePicking, XmippProtocol):
         if hasattr(self, 'outputCoordinates'):
             summary.append('%d noisy particles were picked'%self.outputCoordinates.getSize())
         return summary
+
+
+def writePosFilesStepWorker(setOfCoords, outpath):
+    """ Write the pos file for each micrograph on metadata format. """
+    writeSetOfCoordinates(outpath, setOfCoords, 
+                          scale=setOfCoords.getBoxSize())
+  
+      
+def pickAllNoiseWorker(protocol, setOfCoords, outputRoot, numberOfParticlesToPick, insertStepOrRun="insert"):
+    '''
+    '''
+
+    deps=[]
+    boxSize = setOfCoords.getBoxSize()
+    for mic in setOfCoords.getMicrographs():   
+        mic_fname= mic.getFileName() 
+        mic_id= mic.getObjId()
+        mic_shape= mic.getDim()
+        coords_in_mic_list= list(setOfCoords.iterCoordinates(mic.getObjId() ) )
+        if insertStepOrRun=="insert":
+            localDeps = []          
+            deps.append(protocol._insertFunctionStep('pickNoiseStep', mic_id, mic_fname, mic_shape, outputRoot, 
+                                  numberOfParticlesToPick, boxSize, coords_in_mic_list, prerequisites=localDeps) )
+        else:
+            pickNoiseOneMic(mic_id, mic_fname, mic_shape, outputRoot, 
+                                  numberOfParticlesToPick, boxSize, coords_in_mic_list)
+            
+    if insertStepOrRun=="insert":
+      return deps
+
+
+def writeSetOfCoordsFromFnames( txt_coords_dirPath, setOfInputCoords, setOfNoiseCoordinates=None):
+  sufix="_raw_coords.txt"  
+  inputMics = setOfInputCoords.getMicrographs()  
+  if setOfNoiseCoordinates is None:
+    cleanPath('coordinates_randomPick.sqlite')
+    setOfNoiseCoordinates= SetOfCoordinates(filename=os.path.join(txt_coords_dirPath, 'consensus_NOISE.sqlite'))
+    setOfNoiseCoordinates.setMicrographs(inputMics)
+  setOfNoiseCoordinates.setBoxSize( setOfInputCoords.getBoxSize())
+
+  for fname in os.listdir( txt_coords_dirPath ):
+    if sufix is None or fname.endswith(sufix):
+      with open(os.path.join(txt_coords_dirPath, fname)) as f:
+        mic_id= int(f.readline().split()[0])
+        mic= inputMics[mic_id]
+        for line in f:
+          x_new, y_new = line.split()
+          x_new, y_new = int(x_new), int(y_new)
+          aux = Coordinate()
+          aux.setMicrograph(mic)
+          aux.setX(x_new)
+          aux.setY(y_new)
+          setOfNoiseCoordinates.append(aux)
+  setOfNoiseCoordinates.write()
+  return setOfNoiseCoordinates
+
+def pickNoiseOneMic( mic_id, mic_fname, mic_shape, outputRoot, extractNoiseNumber, boxSize, coords_in_mic_list):
+    """ Pick noise from one micrograph 
+        protocol is self or any other pyworkflow.em.protocol 
+    """
+    extractNoiseNumber= extractNoiseNumber if extractNoiseNumber>0 else len(coords_in_mic_list)
+    baseMicName = pwutils.removeBaseExt(mic_fname)
+    min_required_distance= boxSize//2
+    currentCoords= []
+    for coord in coords_in_mic_list:
+      currentCoords.append( (coord.getX(), coord.getY()) )
+    currentCoords= np.array(currentCoords)
+    if currentCoords.shape[0]>0:
+      good_new_coords= []
+      n_good_coords= 0
+      for iterNum in range(999):
+        randomCoordsX= np.random.randint( boxSize//2, mic_shape[0]- boxSize//2 , size=extractNoiseNumber*2 )
+        randomCoordsY= np.random.randint( boxSize//2, mic_shape[1]- boxSize//2 , size=extractNoiseNumber*2 )
+        randomCoords= np.stack( [randomCoordsX, randomCoordsY], axis=1)
+        del randomCoordsX, randomCoordsY
+        dist_mat= cdist(randomCoords, currentCoords) #dist_mat: i:random_particles   j: currentCoords
+        dist_mat= np.min(dist_mat, axis=1)
+        g_n_c= randomCoords[ dist_mat>= min_required_distance ]
+        n_good_coords+= g_n_c.shape[0]
+        good_new_coords.append(g_n_c )
+        if n_good_coords>= extractNoiseNumber:
+          break
+      good_new_coords= np.concatenate(good_new_coords)[:extractNoiseNumber]    
+      with open(os.path.join(outputRoot, baseMicName+"_raw_coords.txt"), "w") as f:
+          f.write("%d %s %s\n"%(mic_id, baseMicName, mic_fname))
+          for x, y in good_new_coords:
+            f.write("%d %d\n"%(x,y))
+ 
+  
+#OLD implementation based on xmipp_micrograph_scissor
+        
+#def pickAllNoiseWorker(protocol, setOfCoords, outputRoot, numberOfParticlesToPick, boxSize, insertStepOrRun="insert"):
+#    '''
+#    '''
+#    deps=[]
+#    boxSize = setOfCoords.getBoxSize()
+#    if insertStepOrRun=="insert" and hasattr(protocol, "writePosFilesStep"):
+#        firstStepId = protocol._insertFunctionStep('writePosFilesStep')
+#
+#    else:
+#        writePosFilesStepWorker(setOfCoords, outputRoot)
+##    
+#    for mic in setOfCoords.getMicrographs():     
+#        baseMicName = pwutils.removeBaseExt(mic.getFileName())
+#        if insertStepOrRun=="insert":
+#            localDeps = [firstStepId]
+#            deps.append(protocol._insertFunctionStep('pickNoiseStep', baseMicName, mic.getFileName(), 
+#                                       outputRoot, numberOfParticlesToPick,
+#                                       boxSize, prerequisites=localDeps))
+#        else:
+#            pickNoiseOneMic( protocol, baseMicName, mic.getFileName(), outputRoot, numberOfParticlesToPick, boxSize)
+##
+#    if insertStepOrRun=="insert":
+#      return deps
+#
+#        
+#      
+#def pickNoiseOneMic(protocol, baseMicName, micrographToExtract, outputRoot, extractNoiseNumber, boxSize):
+#    """ Pick noise from one micrograph 
+#        protocol is self or any other pyworkflow.em.protocol 
+#    """
+#    fnPosFile = join(outputRoot, baseMicName + ".pos")
+#
+#    # If it has coordinates extract the particles      
+#    particlesMd = 'particles@%s' % fnPosFile
+#
+#    if exists(fnPosFile):
+#        args = " -i %s --pos %s" % (micrographToExtract, particlesMd)
+#        args += " -o %s --Xdim %d" % (outputRoot, boxSize)
+#        args += " --extractNoise %d"%extractNoiseNumber
+#
+#        protocol.runJob("xmipp_micrograph_scissor", args)
+#        cleanPath("%s.stk"%outputRoot)
+#        cleanPath("%s.xmd"%outputRoot)
+#    else:
+#        protocol.warning("The micrograph %s hasn't coordinate file! " % baseMicName)
+#        protocol.warning("Maybe you picked over a subset of micrographs")
