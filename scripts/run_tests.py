@@ -94,11 +94,12 @@ class Tester():
         if args.case:
             print 'Using paths and pattern for given case "%s"' % args.case
             args.paths, args.pattern = PATH_PATTERN[args.case]
-    
+
         tests = unittest.TestSuite()
         if args.tests:
             for t in args.tests:
                 try:
+                    print ' > > > > > > > ', t
                     tests.addTests(unittest.defaultTestLoader.loadTestsFromName(
                         '%s%s' % ('pyworkflow.', t)))
                 except Exception as e:

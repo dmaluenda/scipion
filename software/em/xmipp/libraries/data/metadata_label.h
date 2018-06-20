@@ -90,6 +90,8 @@ enum MDLabel
     MDL_COUNT, ///< Number of elements of a type (int) [this is a genereic type do not use to transfer information to another program]
     MDL_COUNT2, ///< Number of elements of a type (int) [this is a genereic type do not use to transfer information to another program]
 
+    MDL_COORD_CONSENSUS_SCORE, ///< Store a score for the coords. consensus (it will change the behavoir of the viewer)
+
     MDL_CRYSTAL_CELLX, ///< Cell location for crystals
     MDL_CRYSTAL_CELLY, ///< Cell location for crystals
     MDL_CRYSTAL_LATTICE_A,   /// < Lattice vector for projection (vector double)
@@ -1441,6 +1443,8 @@ private:
         MDL::addLabel(MDL_COST_PERCENTILE, LABEL_DOUBLE, "costPerc");
         MDL::addLabel(MDL_COUNT2, LABEL_SIZET, "count2");
         MDL::addLabel(MDL_COUNT, LABEL_SIZET, "count");
+
+        MDL::addLabel(MDL_COORD_CONSENSUS_SCORE, LABEL_DOUBLE, "consensusCost");  // ----------------------- D A V I D -------------
 
         MDL::addLabel(MDL_CRYSTAL_CELLX, LABEL_INT, "crystalCellx");
         MDL::addLabel(MDL_CRYSTAL_CELLY, LABEL_INT, "crystalCelly");

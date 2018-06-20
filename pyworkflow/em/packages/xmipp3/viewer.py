@@ -281,6 +281,30 @@ class XmippViewer(Viewer):
             launchTiltPairPickerGUI(mdFn, tmpDir, self.protocol)
 
 
+
+
+
+
+        elif issubclass(cls, XmippProtExtractParticles):
+            fnParts = obj._getPath('particles.sqlite')  # FIXME: put ExtraPath
+
+            coordsId = 1911  # obj.outputParticles.getObjId()
+
+            labels  = 'id enabled _index _filename _xmipp_consensusCost _xmipp_zScore '
+            labels += '_xmipp_cumulativeSSNR _sampling _xmipp_scoreEmptiness '
+            labels += '_ctfModel._defocusU _ctfModel._defocusV _ctfModel._defocusAngle _transform._matrix'
+            self._views.append(ObjectView(self._project, obj.strId(), fnParts, other=coordsId,
+                                          viewParams={ORDER: labels,
+                                                      VISIBLE: labels,
+                                                      'sortby': '_xmipp_consensusCost asc',
+                                                      RENDER:'_filename',
+                                                      'coordsCons': coordsId}))
+
+
+
+
+
+
         elif (issubclass(cls, XmippProtExtractParticles) or
               issubclass(cls, XmippProtScreenParticles)):
             particles = obj.outputParticles

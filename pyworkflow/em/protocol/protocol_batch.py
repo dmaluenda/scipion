@@ -84,6 +84,12 @@ class ProtUserSubSet(BatchProtocol):
                 output = classSet[volId].getRepresentative()
             self._defineOutputs(outputVolume=output)
 
+        # elif isinstance(inputObj, SetOfParticles) and \
+        #      isinstance(other, SetOfCoordinates):
+        #     print ' > > >  ! OUH YEAAAAAH !  < < < '
+        #     output = self._createCoordsFromParticles(inputObj, other)
+
+
         elif isinstance(inputObj, SetOfImages):
                 output = self._createSubSetFromImages(inputObj)
 
@@ -107,6 +113,8 @@ class ProtUserSubSet(BatchProtocol):
         elif isinstance(inputObj, EMProtocol):
             otherid = self.other.get()
             otherObj = self.getProject().mapper.selectById(int(otherid))
+
+            print 'setObj = ', setObj
 
             if isinstance(setObj, SetOfClasses):
                 setObj.setImages(otherObj)
