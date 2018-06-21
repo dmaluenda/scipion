@@ -33,7 +33,6 @@ import numpy as np
 import scipy
 import random
 
-import time
 from pyworkflow.utils import Environ
 from pyworkflow.utils.path import makeFilePath
 from sklearn.utils import shuffle
@@ -42,6 +41,7 @@ import xmipp
 import pyworkflow.em.metadata as md
 import tensorflow as tf
 from keras import backend as K
+#from matplotlib import pyplot as plt
 
 def updateEnviron(gpuNum=None):
   """ Create the needed environment for TensorFlow programs. """
@@ -49,12 +49,10 @@ def updateEnviron(gpuNum=None):
   if not gpuNum is None:
     environ.update({'LD_LIBRARY_PATH': os.environ['CUDA_LIB']}, position=Environ.BEGIN)
     environ.update({'LD_LIBRARY_PATH': os.environ['CUDA_HOME']+"/extras/CUPTI/lib64"}, position=Environ.BEGIN)
-
     os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST GPU:# must be changed to select desired gpu
   else:
     os.environ['CUDA_VISIBLE_DEVICES']="-1"
 
-import tensorflow as tf
 import keras
 from pyworkflow.em.packages.xmipp3.networkDef import main_network
 tf_intarnalError= tf.errors.InternalError
@@ -102,7 +100,6 @@ class DeepTFSupervised(object):
       @param nData: number of positive cases expected in data. Not needed
     '''
     print ("Creating net.")
-    image_size= (xdim, ydim)
     self.nNetModel, self.optimizer = main_network( (xdim, ydim, num_chan), self.num_labels, nData= nData)
 
   def startSessionAndInitialize(self):
@@ -113,7 +110,7 @@ class DeepTFSupervised(object):
       self.session = tf.Session()
     else:
       self.session= tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=self.numberOfThreads))
-
+    K.set_session(self.session)
     return self.session
 
   def closeSession(self):
@@ -121,17 +118,14 @@ class DeepTFSupervised(object):
       Closes a tensorflow connection and related objects.
 
     '''
-    tf.reset_default_graph()
     K.clear_session()
     self.session.close()
 
 
-  def trainNet(self, nEpochs, dataManagerTrain, learningRate, dataManagerTest=None, auto_stop=False):
+  def trainNet(self, nEpochs, dataManagerTrain, learningRate, auto_stop=False):
     '''
       @param nEpochs: int. The number of epochs that will be used for training
       @param dataManagerTrain: DataManager. Object that will provide training batches (Xs and labels)
-      @param dataManagerTest:  DataManager. Optional Object that will provide testing batches (Xs and labels)
-                                            If not provided, no testing will be done
     '''
 
     print("Learning rate: %.1e"% learningRate)
@@ -150,23 +144,27 @@ class DeepTFSupervised(object):
       else:
         self.createNet(dataManagerTrain.shape[0], dataManagerTrain.shape[1], dataManagerTrain.shape[2], dataManagerTrain.nTrue)    
         self.nNetModel.compile( self.optimizer(learningRate), loss='categorical_crossentropy', metrics=['accuracy'])
+      print(self.nNetModel.summary())
       
       print("nEpochs : %.1f --> Epochs: %d.\nTraining begins: Epoch 0/%d"%(nEpochs__, nEpochs, nEpochs))
       sys.stdout.flush()
       cBacks= [ keras.callbacks.ModelCheckpoint((currentCheckPointName) , monitor='val_acc', verbose=1,
                 save_best_only=True, save_weights_only=False, period=1) ]
-      cBacks+= [ keras.callbacks.ReduceLROnPlateau(monitor='val_acc', factor=0.1, patience=3, min_lr= learningRate*1e-4,
-                 verbose=1) ]
       if auto_stop:
         cBacks+= [ keras.callbacks.EarlyStopping(monitor='val_acc', min_delta=0.0001, patience=5, verbose=1) ]
-        
+          
+      cBacks+= [ keras.callbacks.ReduceLROnPlateau(monitor='val_acc', factor=0.1, patience=3, min_lr= learningRate*1e-3,
+                 verbose=1) ]
+      
       self.nNetModel.fit_generator(dataManagerTrain.getTrainIterator(),steps_per_epoch= CHECK_POINT_AT,
-                                   validation_data=dataManagerTrain.getValidationIterator(), 
-                                   validation_steps=n_steps_per_epoch_test, callbacks=cBacks, epochs=nEpochs, verbose=2)
+                                 validation_data=dataManagerTrain.getValidationIterator(), 
+                                 validation_steps=n_steps_per_epoch_test, callbacks=cBacks, epochs=nEpochs, 
+                                 use_multiprocessing=True, verbose=2)
+      del self.nNetModel      
       self.closeSession()
-
+      
+      
   def predictNet(self, dataManger):
-
     n_images, n_batches= dataManger.getIteratorPredictBatchNSteps()
     y_pred_all= np.zeros(n_images)
     for modelNum in range(self.numberOfModels):
@@ -181,7 +179,7 @@ class DeepTFSupervised(object):
       
       sys.stdout.flush()
       y_pred_all+= self.nNetModel.predict_generator( (data for data,label in dataManger.getIteratorPredictBatch() ),
-                                                steps= n_batches, verbose=0)[:,1]
+                                                steps= n_batches, use_multiprocessing=True, verbose=0)[:,1]
       self.closeSession()
     y_pred_all= y_pred_all/ self.numberOfModels
     return y_pred_all, dataManger.getPredictDataLabel_Id_dataSetNum()
@@ -200,11 +198,12 @@ class DeepTFSupervised(object):
         print("loading model %s"%(currentCheckPointName))
         self.nNetModel= keras.models.load_model( currentCheckPointName )
       else:
-        raise ValueError("Neural net must be trained before prediction")
-      
+        raise ValueError("Neural net must be trained before prediction")      
       sys.stdout.flush()
+      
       y_pred_all[modelNum,:]= self.nNetModel.predict_generator( ( (data, label) for data,label in 
-                                                dataManger.getIteratorPredictBatch() ),steps= n_batches, verbose=0)[:,1]
+                                                      dataManger.getIteratorPredictBatch() ),steps= n_batches, 
+                                                      use_multiprocessing=True, verbose=0)[:,1]
                                                 
       curr_auc= roc_auc_score(y_labels, y_pred_all[modelNum,:] )
       curr_acc= accuracy_score(y_labels, [1 if y>=0.5 else 0 for y in  y_pred_all[modelNum,:]])
@@ -214,7 +213,6 @@ class DeepTFSupervised(object):
     global_auc= roc_auc_score(y_labels, y_pred_all )
     global_acc= accuracy_score(y_labels, [1 if y>=0.5 else 0 for y in  y_pred_all])
     print(">>>>>>>>>>>>\nEnsemble test accuracy            : %f  auc: %f"%(global_acc , global_auc))
-
     return global_auc, global_acc, y_labels, y_pred_all
 
 class DataManager(object):
@@ -379,6 +377,11 @@ class DataManager(object):
         batchLabels[n, 1]= 1
         n+=1
         if n>=batchSize:
+#          fig=plt.figure()
+#          ax=fig.add_subplot(1,1,1)        
+#          ax.imshow(np.squeeze(batchStack[np.random.randint(0,n)]), cmap="Greys")
+#          fig.suptitle('label==1')
+#          plt.show()
           yield batchStack, batchLabels
           n=0
           batchLabels  = np.zeros((batchSize, 2))
@@ -392,6 +395,11 @@ class DataManager(object):
           batchLabels[n, 0]= 1
           n+=1
           if n>=batchSize:
+#            fig=plt.figure()
+#            ax=fig.add_subplot(1,1,1)        
+#            ax.imshow(np.squeeze(batchStack[np.random.randint(0,n)]), cmap="Greys")
+#            fig.suptitle('label==0')
+#            plt.show()          
             yield batchStack, batchLabels
             n=0
             batchLabels  = np.zeros((batchSize, 2))
@@ -435,8 +443,8 @@ class DataManager(object):
                                                                                   self.weightListFalse[self.trainingIdsNeg]))
       augmentBatch= self.augmentBatch
     elif isTrain_or_validation=="validation":
-      idxListTrue =  np.copy(self.validationIdsPos)
-      idxListFalse = np.copy(self.validationIdsNeg)
+      idxListTrue =  self.validationIdsPos
+      idxListFalse = self.validationIdsNeg
       augmentBatch= lambda x: x
     else:
       raise ValueError("isTrain_or_validation must be either train or validation")

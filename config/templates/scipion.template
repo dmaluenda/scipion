@@ -103,8 +103,12 @@ MPI_BINDIR = /usr/lib64/mpi/gcc/openmpi/bin
 # NVCC (CUDA) variables
 # Default CUDA path if not defined for a certain package
 
-CUDA_LIB = /usr/local/cuda-8.0/lib64
-CUDA_BIN = /usr/local/cuda-8.0/bin
+CUDA = True
+CUDA_VERSION = 8.0
+CUDA_HOME = /usr/local/cuda-8.0
+CUDA_BIN = %(CUDA_HOME)s/bin
+CUDA_LIB = %(CUDA_HOME)s/lib64
+CUDNN_VERSION = 6
 NVCC = nvcc --x cu -D_FORCE_INLINES -Xcompiler -fPIC -Wno-deprecated-gpu-targets
 NVCC_INCLUDE = /usr/local/cuda-8.0/include
 NVCC_LIBDIR = %(CUDA_LIB)s

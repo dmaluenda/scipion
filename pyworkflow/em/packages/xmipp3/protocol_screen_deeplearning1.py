@@ -111,7 +111,7 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
 
         form.addSection(label='testingData')
         form.addParam('doTesting', params.BooleanParam, default=False,
-                      label='Perform testing during training?',
+                      label='Perform testing after training?',
                       help='If you set to *Yes*, you should select a testing positive set '
                       'and a testing negative set')
         form.addParam('testPosSetOfParticles', params.PointerParam, condition='doTesting',
@@ -137,14 +137,15 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
                 negativeSetParticles= self.__dict__["negativeSet_%d"%num].get()
                 negSetTrainDict[self._getExtraPath("negativeSet_%d.xmd"%num)]=(negativeSetParticles,
                                                                                self.__dict__["inNegWeight_%d"%num].get())
-        setPredict={self._getExtraPath("predictSetOfParticles.xmd"): (self.predictSetOfParticles.get(),1) }
+        setPredictDict={self._getExtraPath("predictSetOfParticles.xmd"): (self.predictSetOfParticles.get(),1) }
 
-        setTestPos={self._getExtraPath("testTrueParticlesSet.xmd"):  (self.testPosSetOfParticles.get(),1)}
-        setTestNeg={self._getExtraPath("testFalseParticlesSet.xmd"): (self.testNegSetOfParticles.get(),1)}
+        setTestPosDict={self._getExtraPath("testTrueParticlesSet.xmd"):  (self.testPosSetOfParticles.get(),1)}
+        setTestNegDict={self._getExtraPath("testFalseParticlesSet.xmd"): (self.testNegSetOfParticles.get(),1)}
 
-        self._insertFunctionStep('convertInputStep', posSetTrainDict, negSetTrainDict, setPredict, setTestPos, setTestNeg)
-        self._insertFunctionStep('train',  posSetTrainDict, negSetTrainDict, setTestPos, setTestNeg, self.learningRate.get())
-        self._insertFunctionStep('predict',setTestPos,setTestNeg, setPredict)
+        self._insertFunctionStep('convertInputStep', posSetTrainDict, negSetTrainDict, setPredictDict, 
+                                                     setTestPosDict, setTestNegDict)
+        self._insertFunctionStep('train',  posSetTrainDict, negSetTrainDict)
+        self._insertFunctionStep('predict', setTestPosDict, setTestNegDict, setPredictDict)
         self._insertFunctionStep('createOutputStep')
 
     #--------------------------- STEPS functions --------------------------------------------
@@ -162,106 +163,142 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             if not dataDict[fnameParticles][0] is None:
                 writeSetOfParticles(dataDict[fnameParticles][0], fnameParticles)
 
-    def train(self, posTrainDict, negTrainDict, posTestDict, negTestDict, learningRate):
-        '''
-        posTrainDict, negTrainDict, posTestDict, posTestNeg: { fname: [(SetOfParticles, weight:int)]}
-        learningRate: float
-        '''
-        nEpochs= self.nEpochs.get()
+    def train(self, posTrainDict, negTrainDict):
+        netDataPath= self._getExtraPath('nnetData')
+
+        if hasattr(self, 'gpuToUse'):        
+            from pyworkflow.em.packages.xmipp3.deepLearning1 import  updateEnviron
+            numberOfThreads=None
+            gpuToUse= self.gpuToUse.get()
+            updateEnviron(gpuToUse)
+        else:
+            numberOfThreads=self.numberOfThreads.get()
+            gpuToUse= None
+
         if self.doContinue.get():
-            previousRun=self.continueRun.get()
-            copyTree(previousRun._getExtraPath('nnetData'),self._getExtraPath('nnetData'))
-            if not ( self.doContinue.get() and self.keepTraining.get()) or nEpochs==0:
+            if not ( self.doContinue.get() and self.keepTraining.get()):
                 print("training is not required")
                 return
-            dataShape, nTrue, numModels= self.loadNetShape()
+            prevRunPath= self.continueRun.get()._getExtraPath('nnetData')
         else:
-            numModels= self.nModels.get()
-            if nEpochs==0:
-                raise ValueError("Number of epochs >0 if not continuing from trained model")
-        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron, tf_intarnalError
+          prevRunPath= None
+        print(prevRunPath)
+        trainWorker(netDataPath, posTrainDict, negTrainDict, self.nEpochs.get(), self.learningRate.get(), 
+                    self.auto_stopping.get(), 
+                    self.nModels.get(), gpuToUse, numberOfThreads, prevRunPath= prevRunPath)
+#    def train(self, posTrainDict, negTrainDict, posTestDict, negTestDict, learningRate):
+#        '''
+#        posTrainDict, negTrainDict, posTestDict, posTestNeg: { fname: [(SetOfParticles, weight:int)]}
+#        learningRate: float
+#        '''
+#        nEpochs= self.nEpochs.get()
+#        if self.doContinue.get():
+#            previousRun=self.continueRun.get()
+#            copyTree(previousRun._getExtraPath('nnetData'),self._getExtraPath('nnetData'))
+#            if not ( self.doContinue.get() and self.keepTraining.get()) or nEpochs==0:
+#                print("training is not required")
+#                return
+#            dataShape, nTrue, numModels= self.loadNetShape()
+#        else:
+#            numModels= self.nModels.get()
+#            if nEpochs==0:
+#                raise ValueError("Number of epochs >0 if not continuing from trained model")
+#        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron, tf_intarnalError
+#
+#        if hasattr(self, 'gpuToUse'):
+#            updateEnviron( self.gpuToUse.get() )
+#            numberOfThreads=None
+#        else:
+#            updateEnviron(None)
+#            numberOfThreads=self.numberOfThreads.get()
+#
+#        trainDataManager= DataManager( posSetDict= posTrainDict,
+#                                       negSetDict= negTrainDict)
+#        if self.doContinue.get():
+#            assert dataShape== trainDataManager.shape, "Error, data shape mismatch in input data compared to previous model"
+#        if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
+#            testDataManager= DataManager(posSetDict= posTestDict,negSetDict= negTestDict)
+#        else:
+#            testDataManager= None
+#        self.writeNetShape(trainDataManager.shape, trainDataManager.nTrue, numModels)
+#        assert numModels>=1, "Error, nModels<1"
+#        try:
+#            nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"),
+#                                    numberOfModels=numModels)
+#            nnet.trainNet(nEpochs, trainDataManager, learningRate, testDataManager, self.auto_stopping.get())
+#        except tf_intarnalError as e:
+#            if e._error_code==13:
+#                raise Exception("Out of gpu Memory. gpu # %d"%(self.gpuToUse.get()))
+#            else:
+#                raise e
+#        del nnet
+#
+#    def writeNetShape(self, shape, nTrue, nModels):
+#        makeFilePath(self._getExtraPath("nnetData/nnetInfo.txt") )
+#        with open( self._getExtraPath("nnetData/nnetInfo.txt"), "w" ) as f:
+#            f.write("inputShape: %d %d %d\ninputNTrue: %d\nnModels: %d"%( shape+(nTrue, nModels)))
+#            
+#    def loadNetShape(self):
+#        with open( self._getExtraPath("nnetData/nnetInfo.txt")) as f:
+#            lines= f.readlines()
+#            dataShape= tuple( [ int(elem) for elem in lines[0].split()[1:] ] )
+#            nTrue= int(lines[1].split()[1])
+#            nModels= int(lines[2].split()[1])
+#        return dataShape, nTrue, nModels
 
-        if hasattr(self, 'gpuToUse'):
-            updateEnviron( self.gpuToUse.get() )
+    def predict(self, posTestDict, negTestDict, predictDict):
+        netDataPath= self._getExtraPath('nnetData')
+        if hasattr(self, 'gpuToUse'):        
+            from pyworkflow.em.packages.xmipp3.deepLearning1 import  updateEnviron
             numberOfThreads=None
+            gpuToUse= self.gpuToUse.get()
+            updateEnviron(gpuToUse)
         else:
-            updateEnviron(None)
             numberOfThreads=self.numberOfThreads.get()
-
-        trainDataManager= DataManager( posSetDict= posTrainDict,
-                                       negSetDict= negTrainDict)
-        if self.doContinue.get():
-            assert dataShape== trainDataManager.shape, "Error, data shape mismatch in input data compared to previous model"
-        if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
-            testDataManager= DataManager(posSetDict= posTestDict,negSetDict= negTestDict)
-        else:
-            testDataManager= None
-        self.writeNetShape(trainDataManager.shape, trainDataManager.nTrue, numModels)
-        assert numModels>=1, "Error, nModels<1"
-        try:
-            nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"),
-                                    numberOfModels=numModels)
-            nnet.trainNet(nEpochs, trainDataManager, learningRate, testDataManager, self.auto_stopping.get())
-        except tf_intarnalError as e:
-            if e._error_code==13:
-                raise Exception("Out of gpu Memory. gpu # %d"%(self.gpuToUse.get()))
-            else:
-                raise e
-        del nnet
-
-    def writeNetShape(self, shape, nTrue, nModels):
-        makeFilePath(self._getExtraPath("nnetData/nnetInfo.txt") )
-        with open( self._getExtraPath("nnetData/nnetInfo.txt"), "w" ) as f:
-            f.write("inputShape: %d %d %d\ninputNTrue: %d\nnModels: %d"%( shape+(nTrue, nModels)))
+            gpuToUse= None      
             
-    def loadNetShape(self):
-        with open( self._getExtraPath("nnetData/nnetInfo.txt")) as f:
-            lines= f.readlines()
-            dataShape= tuple( [ int(elem) for elem in lines[0].split()[1:] ] )
-            nTrue= int(lines[1].split()[1])
-            nModels= int(lines[2].split()[1])
-        return dataShape, nTrue, nModels
-        
-    def predict(self, posTestDict, negTestDict, setPredict):
-        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron
-        import numpy as np
-
-        if hasattr(self, 'gpuToUse'):
-            updateEnviron( self.gpuToUse.get() )
-            numberOfThreads=None
-        else:
-            updateEnviron(None)
-            numberOfThreads=self.numberOfThreads.get()
-
-        predictDataManager= DataManager( posSetDict= setPredict, negSetDict= None)
-        dataShape, nTrue, numModels= self.loadNetShape()
-
-
-        nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"), 
-                                numberOfModels=numModels)
-        y_pred, label_Id_dataSetNumIterator= nnet.predictNet(predictDataManager)
-        
-        metadataPosList, metadataNegList= predictDataManager.getMetadata(None)
-        for score, (isPositive, mdId, dataSetNumber) in zip(y_pred, label_Id_dataSetNumIterator):
-            if isPositive==True:
-                metadataPosList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
-            else:
-                metadataNegList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
-
-        assert len(metadataPosList)==1, "Error, predict setOfParticles must contain one single object"
-        metadataPosList[0].write(self._getPath("particles.xmd"))
-
-        if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
-          testDataManager= DataManager(posSetDict= posTestDict,
-                               negSetDict= negTestDict, validationFraction=0)
-          print("Evaluating test set")
-          global_auc, global_acc, y_labels, y_pred_all= nnet.evaluateNet(testDataManager)
-          if WRITE_TEST_SCORES:
-            makeFilePath(self._getExtraPath("nnetData/testPredictions.txt") )
-            with open( self._getExtraPath("nnetData/testPredictions.txt"), "w") as f:
-              f.write("label score\n")
-              for l, s in zip(y_labels, y_pred_all):
-                f.write("%d %f\n"%(l, s))
+        outParticlesPath= self._getPath("particles.xmd")
+        predictWorker( netDataPath, posTestDict, negTestDict, predictDict, outParticlesPath, 
+                        gpuToUse, numberOfThreads)
+#    def predict(self, posTestDict, negTestDict, setPredict):
+#        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, updateEnviron
+#
+#        if hasattr(self, 'gpuToUse'):
+#            updateEnviron( self.gpuToUse.get() )
+#            numberOfThreads=None
+#        else:
+#            updateEnviron(None)
+#            numberOfThreads=self.numberOfThreads.get()
+#
+#        predictDataManager= DataManager( posSetDict= setPredict, negSetDict= None)
+#        dataShape, nTrue, numModels= self.loadNetShape()
+#
+#
+#        nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=self._getExtraPath("nnetData"), 
+#                                numberOfModels=numModels)
+#        y_pred, label_Id_dataSetNumIterator= nnet.predictNet(predictDataManager)
+#        
+#        metadataPosList, metadataNegList= predictDataManager.getMetadata(None)
+#        for score, (isPositive, mdId, dataSetNumber) in zip(y_pred, label_Id_dataSetNumIterator):
+#            if isPositive==True:
+#                metadataPosList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
+#            else:
+#                metadataNegList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
+#
+#        assert len(metadataPosList)==1, "Error, predict setOfParticles must contain one single object"
+#        metadataPosList[0].write(self._getPath("particles.xmd"))
+#
+#        if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
+#          testDataManager= DataManager(posSetDict= posTestDict,
+#                               negSetDict= negTestDict, validationFraction=0)
+#          print("Evaluating test set")
+#          global_auc, global_acc, y_labels, y_pred_all= nnet.evaluateNet(testDataManager)
+#          if WRITE_TEST_SCORES:
+#            makeFilePath(self._getExtraPath("nnetData/testPredictions.txt") )
+#            with open( self._getExtraPath("nnetData/testPredictions.txt"), "w") as f:
+#              f.write("label score\n")
+#              for l, s in zip(y_labels, y_pred_all):
+#                f.write("%d %f\n"%(l, s))
 
     def createOutputStep(self):
         imgSet = self.predictSetOfParticles.get()
@@ -289,3 +326,102 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             item._appendItem = False
         else:
             item._appendItem = True
+
+
+
+def writeNetShape(netDataPath, shape, nTrue, nModels):
+  '''
+  netDataPath= self._getExtraPath("nnetData")
+  '''
+  netInfoFname= os.path.join(netDataPath, "nnetInfo.txt")
+
+  makeFilePath( netInfoFname )
+  with open( netInfoFname, "w" ) as f:
+      f.write("inputShape: %d %d %d\ninputNTrue: %d\nnModels: %d"%( shape+(nTrue, nModels)))
+        
+def loadNetShape(netDataPath):
+  '''
+  netDataPath= self._getExtraPath("nnetData")
+  '''
+  netInfoFname= os.path.join(netDataPath, "nnetInfo.txt")  
+  with open( netInfoFname ) as f:
+      lines= f.readlines()
+      dataShape= tuple( [ int(elem) for elem in lines[0].split()[1:] ] )
+      nTrue= int(lines[1].split()[1])
+      nModels= int(lines[2].split()[1])
+  return dataShape, nTrue, nModels
+  
+def trainWorker(netDataPath, posTrainDict, negTrainDict, nEpochs, learningRate, auto_stop, 
+                numModels, gpuToUse, numberOfThreads, prevRunPath=None):
+  '''
+    netDataPath=self._getExtraPath("nnetData")
+    posTrainDict, negTrainDict: { fname: [(SetOfParticles, weight:int)]} 
+              e.g. : {'Runs/006003_XmippProtScreenDeepLearning1/extra/negativeSet_1.xmd': (SetOfParticlesObject,1)}
+    learningRate: float
+    prevRunPath: a path to previous run or None. Generally prevRun._getExtraPath('nnetData')
+  '''
+  if nEpochs==0:
+    print("training is not required")
+    return    
+  if prevRunPath:
+      copyTree(prevRunPath, netDataPath)
+      dataShape, nTrue, numModels= loadNetShape(netDataPath)
+  else:
+      if nEpochs==0:
+          raise ValueError("Number of epochs >0 if not continuing from trained model")
+  from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, tf_intarnalError
+
+
+  trainDataManager= DataManager( posSetDict= posTrainDict, negSetDict= negTrainDict)
+  if prevRunPath:
+      assert dataShape== trainDataManager.shape, "Error, data shape mismatch in input data compared to previous model"
+
+  writeNetShape(netDataPath, trainDataManager.shape, trainDataManager.nTrue, numModels)
+  assert numModels>=1, "Error, nModels<1"
+  try:
+      nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath= netDataPath,
+                              numberOfModels=numModels)
+      nnet.trainNet(nEpochs, trainDataManager, learningRate, auto_stop)
+  except tf_intarnalError as e:
+      if e._error_code==13:
+          raise Exception("Out of gpu Memory. gpu # %d"%(gpuToUse))
+      else:
+          raise e
+  del nnet
+  
+def predictWorker( netDataPath, posTestDict, negTestDict, predictDict, outParticlesPath, 
+                   gpuToUse, numberOfThreads):
+    '''
+    outParticlesPath= self._getPath("particles.xmd")
+    '''
+    from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager
+
+
+    predictDataManager= DataManager( posSetDict= predictDict, negSetDict= None)
+    dataShape, nTrue, numModels= loadNetShape(netDataPath)
+
+    nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=netDataPath, 
+                            numberOfModels=numModels)
+    y_pred, label_Id_dataSetNumIterator= nnet.predictNet(predictDataManager)
+    
+    metadataPosList, metadataNegList= predictDataManager.getMetadata(None)
+    for score, (isPositive, mdId, dataSetNumber) in zip(y_pred, label_Id_dataSetNumIterator):
+        if isPositive==True:
+            metadataPosList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
+        else:
+            metadataNegList[dataSetNumber].setValue(md.MDL_ZSCORE_DEEPLEARNING1, score, mdId)
+
+    assert len(metadataPosList)==1, "Error, predict setOfParticles must contain one single object"
+    metadataPosList[0].write(outParticlesPath)
+
+    if not list(posTestDict.values())[0][0] is None and not list(negTestDict.values())[0][0] is None:
+      testDataManager= DataManager(posSetDict= posTestDict,
+                           negSetDict= negTestDict, validationFraction=0)
+      print("Evaluating test set")
+      global_auc, global_acc, y_labels, y_pred_all= nnet.evaluateNet(testDataManager)
+      if WRITE_TEST_SCORES:
+        makeFilePath( os.path.join(netDataPath, "testPredictions.txt") )
+        with open( os.path.join(netDataPath, "testPredictions.txt"), "w") as f:
+          f.write("label score\n")
+          for l, s in zip(y_labels, y_pred_all):
+            f.write("%d %f\n"%(l, s))
