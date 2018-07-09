@@ -33,9 +33,7 @@ import numpy as np
 import scipy
 import random
 
-from pyworkflow.utils import Environ
 from pyworkflow.utils.path import makeFilePath
-from sklearn.utils import shuffle
 from sklearn.metrics import accuracy_score, roc_auc_score
 import xmipp
 import pyworkflow.em.metadata as md
@@ -45,11 +43,11 @@ from keras import backend as K
 
 def updateEnviron(gpuNum=None):
   """ Create the needed environment for TensorFlow programs. """
-  environ = Environ(os.environ)
+  print("updating environ to select gpu %s"%(gpuNum) )
   if not gpuNum is None:
-    environ.update({'LD_LIBRARY_PATH': os.environ['CUDA_LIB']}, position=Environ.BEGIN)
-    environ.update({'LD_LIBRARY_PATH': os.environ['CUDA_HOME']+"/extras/CUPTI/lib64"}, position=Environ.BEGIN)
-    os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST GPU:# must be changed to select desired gpu
+    os.environ['LD_LIBRARY_PATH']= os.environ['CUDA_LIB']+":"+os.environ['CUDA_HOME']+"/extras/CUPTI/lib64"
+    os.environ['LD_LIBRARY_PATH']= os.environ['CUDA_LIB']
+    os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST 1 GPU:# must be changed to select desired gpu
   else:
     os.environ['CUDA_VISIBLE_DEVICES']="-1"
 
@@ -57,10 +55,10 @@ import keras
 from pyworkflow.em.packages.xmipp3.networkDef import main_network
 tf_intarnalError= tf.errors.InternalError
 
-BATCH_SIZE= 128
+#BATCH_SIZE= 128
+BATCH_SIZE= 32
 
 CHECK_POINT_AT= 100
-N_LABELS= 2
 
 WRITE_TEST_SCORES= True
 
@@ -87,12 +85,10 @@ class DeepTFSupervised(object):
         
     self.checkPointsNameTemplate= os.path.join(checkPointsName,"deepModel.hdf5")
 
-    self.num_labels= N_LABELS
-
     self.nNetModel= None
     self.optimizer= None
 
-  def createNet(self, xdim, ydim, num_chan, nData=2**12):
+  def createNet(self, xdim, ydim, num_chan, nData=2**12, l2RegStrength=1e-5):
     '''
       @param xdim: int. height of images
       @param ydim: int. width of images
@@ -100,7 +96,7 @@ class DeepTFSupervised(object):
       @param nData: number of positive cases expected in data. Not needed
     '''
     print ("Creating net.")
-    self.nNetModel, self.optimizer = main_network( (xdim, ydim, num_chan), self.num_labels, nData= nData)
+    self.nNetModel, self.optimizer = main_network( (xdim, ydim, num_chan),  nData= nData, l2RegStrength= l2RegStrength)
 
   def startSessionAndInitialize(self):
     '''
@@ -122,15 +118,18 @@ class DeepTFSupervised(object):
     self.session.close()
 
 
-  def trainNet(self, nEpochs, dataManagerTrain, learningRate, auto_stop=False):
+  def trainNet(self, nEpochs, dataManagerTrain, learningRate, l2RegStrength=1e-5, auto_stop=False):
     '''
       @param nEpochs: int. The number of epochs that will be used for training
       @param dataManagerTrain: DataManager. Object that will provide training batches (Xs and labels)
     '''
 
-    print("Learning rate: %.1e"% learningRate)
+    print("Learning rate: %.1e"%(learningRate) )
+    print("L2 regularization strength: %.1e"%(l2RegStrength) )
     print("auto_stop:", auto_stop)
-    n_steps_per_epoch_train, n_steps_per_epoch_test= dataManagerTrain.getNStepPerEpoch()
+    sys.stdout.flush()
+    
+    n_steps_per_epoch_train, n_steps_per_epoch_val= dataManagerTrain.getNStepPerEpoch()
     nEpochs__= nEpochs
     nEpochs= max(1, nEpochs*float(n_steps_per_epoch_train)/CHECK_POINT_AT)
     for modelNum in range(self.numberOfModels):
@@ -142,9 +141,9 @@ class DeepTFSupervised(object):
         print("loading previosly saved model %s"%(currentCheckPointName))
         self.nNetModel= keras.models.load_model( currentCheckPointName )
       else:
-        self.createNet(dataManagerTrain.shape[0], dataManagerTrain.shape[1], dataManagerTrain.shape[2], dataManagerTrain.nTrue)    
+        self.createNet(dataManagerTrain.shape[0], dataManagerTrain.shape[1], dataManagerTrain.shape[2], dataManagerTrain.nTrue, l2RegStrength)
         self.nNetModel.compile( self.optimizer(learningRate), loss='categorical_crossentropy', metrics=['accuracy'])
-      print(self.nNetModel.summary())
+#      print(self.nNetModel.summary())
       
       print("nEpochs : %.1f --> Epochs: %d.\nTraining begins: Epoch 0/%d"%(nEpochs__, nEpochs, nEpochs))
       sys.stdout.flush()
@@ -157,8 +156,8 @@ class DeepTFSupervised(object):
                  verbose=1) ]
       
       self.nNetModel.fit_generator(dataManagerTrain.getTrainIterator(),steps_per_epoch= CHECK_POINT_AT,
-                                 validation_data=dataManagerTrain.getValidationIterator(), 
-                                 validation_steps=n_steps_per_epoch_test, callbacks=cBacks, epochs=nEpochs, 
+                                 validation_data=dataManagerTrain.getValidationIterator( batchesPerEpoch= n_steps_per_epoch_val), 
+                                 validation_steps=n_steps_per_epoch_val, callbacks=cBacks, epochs=nEpochs, 
                                  use_multiprocessing=True, verbose=2)
       del self.nNetModel      
       self.closeSession()
@@ -170,6 +169,7 @@ class DeepTFSupervised(object):
     for modelNum in range(self.numberOfModels):
       self.startSessionAndInitialize()
       print("predicting with model %d/%d"%((modelNum+1), self.numberOfModels))  
+      sys.stdout.flush()      
       currentCheckPointName= self.checkPointsNameTemplate%modelNum
       if os.path.isfile( currentCheckPointName ):
         print("loading model %s"%(currentCheckPointName))
@@ -207,32 +207,35 @@ class DeepTFSupervised(object):
                                                 
       curr_auc= roc_auc_score(y_labels, y_pred_all[modelNum,:] )
       curr_acc= accuracy_score(y_labels, [1 if y>=0.5 else 0 for y in  y_pred_all[modelNum,:]])
-      print("Model %d test accuracy: %f  auc: %f"%(modelNum, curr_acc, curr_auc))
+      print("Model %d test accuracy (thr=0.5): %f  auc: %f"%(modelNum, curr_acc, curr_auc))
       self.closeSession()
     y_pred_all= np.mean(y_pred_all, axis=0)
     global_auc= roc_auc_score(y_labels, y_pred_all )
     global_acc= accuracy_score(y_labels, [1 if y>=0.5 else 0 for y in  y_pred_all])
-    print(">>>>>>>>>>>>\nEnsemble test accuracy            : %f  auc: %f"%(global_acc , global_auc))
+    print(">>>>>>>>>>>>\nEnsemble test accuracy (thr=0.5)     : %f  auc: %f"%(global_acc , global_auc))
     return global_auc, global_acc, y_labels, y_pred_all
 
 class DataManager(object):
 
   def __init__(self, posSetDict, negSetDict=None, validationFraction=0.1):
     '''
-        posSetDict, negSetDict: { fname: [(SetOfParticles, weight:int)]
+        posSetDict, negSetDict: { fnameToMetadata:  weight:int ]
     '''
-    assert validationFraction <= 0.4, "Error, validationFraction must validationFraction <= 0.4"
+    assert validationFraction <= 0.4, "Error, validationFraction must  <= 0.4"
     if negSetDict is None: validationFraction= -1
     self.mdListFalse=None
     self.nFalse=0 #Number of negative particles in dataManager
 
     self.mdListTrue, self.fnMergedListTrue, self.weightListTrue, self.nTrue, self.shape= self.colectMetadata(posSetDict)
-    assert self.nTrue > 2*BATCH_SIZE, "Error, the number of positive particles for training is to small (%d)"%(self.nTrue)
     self.batchSize= BATCH_SIZE
     self.splitPoint= self.batchSize//2
-    
     self.validationFraction= validationFraction
     
+    if validationFraction!=0:
+        assert 0 not in self.getNStepPerEpoch(), "Error, the number of positive particles for training is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
+    else:
+        assert self.getNStepPerEpoch()[0] != 0, "Error, the number of particles for testing is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
+ 
     if validationFraction>0:
       self.trainingIdsPos= np.random.choice( self.nTrue,  int((1-validationFraction)*self.nTrue), False)
       self.validationIdsPos= np.array(list(set(range(self.nTrue)).difference(self.trainingIdsPos)))
@@ -245,6 +248,9 @@ class DataManager(object):
       assert shapeFalse== self.shape, "Negative images and positive images have different shape"
       self.trainingIdsNeg= np.random.choice( self.nFalse,  int((1-validationFraction)*self.nFalse), False)
       self.validationIdsNeg= np.array(list(set(range(self.nFalse)).difference(self.trainingIdsNeg)))
+      if validationFraction>0 and not self.trainingIdsNeg is None:
+          assert len(self.trainingIdsPos)<=  len(self.trainingIdsNeg), "Error, the number of positive particles must be <= negative particles"
+
         
   def colectMetadata(self, dictData):
 
@@ -254,14 +260,16 @@ class DataManager(object):
     nParticles=0
     shapeParticles=(None, None, 1)
     for fnameXMDF in sorted(dictData):
-      setOfParticlesObject, weight= dictData[fnameXMDF]
+      weight= dictData[fnameXMDF]
       mdObject  = md.MetaData(fnameXMDF)
+      I= xmipp.Image()
+      I.read(mdObject.getValue(md.MDL_IMAGE, mdObject.firstObject()))
+      xdim, ydim= I.getData().shape
       imgFnames = mdObject.getColumnValues(md.MDL_IMAGE)
       mdList+= [mdObject]
       fnamesList_merged+= imgFnames
-      xdim, ydim, _   = setOfParticlesObject.getDim()
       tmpShape= (xdim,ydim,1)
-      tmpNumParticles= setOfParticlesObject.getSize()
+      tmpNumParticles= mdObject.size()
       if shapeParticles!= (None, None, 1):
         assert tmpShape== shapeParticles, "Error, particles of different shapes mixed"
       else:
@@ -417,11 +425,11 @@ class DataManager(object):
       for batch in self._getOneEpochTrainOrValidation(isTrain_or_validation="train"):
         yield batch
         
-  def getValidationIterator(self, nEpochs=-1):
+  def getValidationIterator(self, nEpochs=-1, batchesPerEpoch= None):
     if nEpochs<0:
       nEpochs= sys.maxsize  
     for i in range(nEpochs):
-      for batch in self._getOneEpochTrainOrValidation(isTrain_or_validation="validation"):
+      for batch in self._getOneEpochTrainOrValidation(isTrain_or_validation="validation", nBatches= batchesPerEpoch):
         yield batch
 
   def _getOneEpochTrainOrValidation(self, isTrain_or_validation, nBatches= None):
@@ -449,9 +457,8 @@ class DataManager(object):
     else:
       raise ValueError("isTrain_or_validation must be either train or validation")
    
-    fnMergedListTrue=  [ self.fnMergedListTrue[i] for i in idxListTrue ]
-    fnMergedListFalse= [ self.fnMergedListFalse[i] for i in idxListFalse ]
-
+    fnMergedListTrue=   ( self.fnMergedListTrue[i] for i in idxListTrue ) 
+    fnMergedListFalse=  ( self.fnMergedListFalse[i] for i in idxListFalse ) 
     for fnImageTrue, fnImageFalse in zip(fnMergedListTrue, fnMergedListFalse):
       I.read(fnImageTrue)
       batchStack[n,...]= np.expand_dims(I.getData(),-1)

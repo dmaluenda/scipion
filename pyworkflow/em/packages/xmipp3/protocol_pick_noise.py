@@ -71,12 +71,19 @@ class XmippProtPickNoise(ProtParticlePicking, XmippProtocol):
         form.addParallelSection(threads=4, mpi=1)
     
     #--------------------------- INSERT steps functions ------------------------
+    
+    def pickNoiseWorker(self, fun, *args):
+        return fun(*args)
+    
     def _insertAllSteps(self):
         """for each micrograph insert the steps to preprocess it"""
         #Insert pickNoise steps using function
-        deps= pickAllNoiseWorker(self, self.inputCoordinates.get(), self._getExtraPath(), self.extractNoiseNumber.get(),
-                                 insertStepOrRun="insert")
 
+        func, argList= pickAllNoiseWorker( self.inputCoordinates.get(), self._getExtraPath(), self.extractNoiseNumber.get() )
+        deps=[]
+        for argTuple in argList:
+            deps.append(self._insertFunctionStep("pickNoiseWorker", func, *argTuple) )
+        
         self._insertFunctionStep('createOutputStep', prerequisites= deps )
 
 
@@ -125,36 +132,37 @@ def writePosFilesStepWorker(setOfCoords, outpath):
                           scale=setOfCoords.getBoxSize())
   
       
-def pickAllNoiseWorker(protocol, setOfCoords, outputRoot, numberOfParticlesToPick, insertStepOrRun="insert"):
+
+def pickAllNoiseWorker( setOfCoords, outputRoot, numberOfParticlesToPick):
     '''
+    return pickNoiseFunction, listOfArgumentsTo pickNoiseFunction
     '''
 
-    deps=[]
+    argsList=[]
     boxSize = setOfCoords.getBoxSize()
     for mic in setOfCoords.getMicrographs():   
         mic_fname= mic.getFileName() 
         mic_id= mic.getObjId()
         mic_shape= mic.getDim()
-        coords_in_mic_list= list(setOfCoords.iterCoordinates(mic.getObjId() ) )
-        if insertStepOrRun=="insert":
-            localDeps = []          
-            deps.append(protocol._insertFunctionStep('pickNoiseStep', mic_id, mic_fname, mic_shape, outputRoot, 
-                                  numberOfParticlesToPick, boxSize, coords_in_mic_list, prerequisites=localDeps) )
-        else:
-            pickNoiseOneMic(mic_id, mic_fname, mic_shape, outputRoot, 
-                                  numberOfParticlesToPick, boxSize, coords_in_mic_list)
-            
-    if insertStepOrRun=="insert":
-      return deps
+        coords_in_mic_list= list(setOfCoords.iterCoordinates(mic.getObjId() ) )     
+        argsList.append( (mic_id, mic_fname, mic_shape, outputRoot, 
+                          numberOfParticlesToPick, boxSize, coords_in_mic_list) )
+    return pickNoiseOneMic, argsList
 
 
-def writeSetOfCoordsFromFnames( txt_coords_dirPath, setOfInputCoords, setOfNoiseCoordinates=None):
+def writeSetOfCoordsFromFnames( txt_coords_dirPath, setOfInputCoords, sqliteOutName=None):
+  '''
+  txt_coords_dirPath: path where there is txt files with coordinates
+  setOfInputCoords. Set to find micrographs
+  setOfNoiseCoordinates if not none, set where results will be written.
+  '''
   sufix="_raw_coords.txt"  
-  inputMics = setOfInputCoords.getMicrographs()  
-  if setOfNoiseCoordinates is None:
-    cleanPath('coordinates_randomPick.sqlite')
-    setOfNoiseCoordinates= SetOfCoordinates(filename=os.path.join(txt_coords_dirPath, 'consensus_NOISE.sqlite'))
-    setOfNoiseCoordinates.setMicrographs(inputMics)
+  inputMics = setOfInputCoords.getMicrographs()
+  if not sqliteOutName:
+    sqliteOutName= os.path.join(txt_coords_dirPath, 'consensus_NOISE.sqlite')
+  cleanPath('coordinates_randomPick.sqlite')
+  setOfNoiseCoordinates= SetOfCoordinates(filename= sqliteOutName)
+  setOfNoiseCoordinates.setMicrographs(inputMics)
   setOfNoiseCoordinates.setBoxSize( setOfInputCoords.getBoxSize())
 
   for fname in os.listdir( txt_coords_dirPath ):
@@ -187,7 +195,7 @@ def pickNoiseOneMic( mic_id, mic_fname, mic_shape, outputRoot, extractNoiseNumbe
     if currentCoords.shape[0]>0:
       good_new_coords= []
       n_good_coords= 0
-      for iterNum in range(999):
+      for iterNum in range(9999):
         randomCoordsX= np.random.randint( boxSize//2, mic_shape[0]- boxSize//2 , size=extractNoiseNumber*2 )
         randomCoordsY= np.random.randint( boxSize//2, mic_shape[1]- boxSize//2 , size=extractNoiseNumber*2 )
         randomCoords= np.stack( [randomCoordsX, randomCoordsY], axis=1)
