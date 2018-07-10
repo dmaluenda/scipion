@@ -286,7 +286,7 @@ def trainWorker(netDataPath, posTrainDict, negTrainDict, nEpochs, learningRate, 
     learningRate: float
     prevRunPath: a path to previous run or None. Generally prevRun._getExtraPath('nnetData')
     '''
-    print(prevRunPath, netDataPath, nEpochs)
+#    print(prevRunPath, netDataPath, nEpochs)
     import sys
     sys.stdout.flush()
     if prevRunPath:

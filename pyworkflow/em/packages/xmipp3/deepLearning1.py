@@ -33,7 +33,6 @@ import numpy as np
 import scipy
 import random
 
-from pyworkflow.utils.path import makeFilePath
 from sklearn.metrics import accuracy_score, roc_auc_score
 import xmipp
 import pyworkflow.em.metadata as md
@@ -88,7 +87,7 @@ class DeepTFSupervised(object):
     self.nNetModel= None
     self.optimizer= None
 
-  def createNet(self, xdim, ydim, num_chan, nData=2**12, l2RegStrength=1e-5):
+  def createNet(self, xdim, ydim, num_chan, nData=2**12, learningRate=1e-4, l2RegStrength=1e-5):
     '''
       @param xdim: int. height of images
       @param ydim: int. width of images
@@ -96,8 +95,21 @@ class DeepTFSupervised(object):
       @param nData: number of positive cases expected in data. Not needed
     '''
     print ("Creating net.")
-    self.nNetModel, self.optimizer = main_network( (xdim, ydim, num_chan),  nData= nData, l2RegStrength= l2RegStrength)
+    self.nNetModel, self.optimizerFunLambda = main_network( (xdim, ydim, num_chan),  nData= nData, l2RegStrength= l2RegStrength)
+    self.optimizer= self.optimizerFunLambda(learningRate)
+    self.nNetModel.compile( self.optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
+  def loadNNet(self, kerasModelFname, keepTraining=True, learningRate=1e-4, l2RegStrength=1e-5):
+    self.nNetModel= keras.models.load_model( kerasModelFname )
+    self.optimizer= self.nNetModel.optimizer
+    if keepTraining:
+        K.set_value(self.nNetModel.optimizer.lr, learningRate)    
+        for layer in self.nNetModel.layers:
+            if hasattr(layer, "kernel_regularizer"):
+                if hasattr(layer.kernel_regularizer, "l2"):
+                    layer.kernel_regularizer.l2= l2RegStrength
+        self.nNetModel.compile( self.nNetModel.optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    
   def startSessionAndInitialize(self):
     '''
     '''
@@ -139,10 +151,10 @@ class DeepTFSupervised(object):
       print("current checkpoint name %s"%(currentCheckPointName))
       if os.path.isfile( currentCheckPointName ):
         print("loading previosly saved model %s"%(currentCheckPointName))
-        self.nNetModel= keras.models.load_model( currentCheckPointName )
+        self.loadNNet( currentCheckPointName, keepTraining=True, learningRate= learningRate, l2RegStrength=1e-5)
       else:
-        self.createNet(dataManagerTrain.shape[0], dataManagerTrain.shape[1], dataManagerTrain.shape[2], dataManagerTrain.nTrue, l2RegStrength)
-        self.nNetModel.compile( self.optimizer(learningRate), loss='categorical_crossentropy', metrics=['accuracy'])
+        self.createNet(dataManagerTrain.shape[0], dataManagerTrain.shape[1], dataManagerTrain.shape[2], dataManagerTrain.nTrue,
+                       learningRate, l2RegStrength)
 #      print(self.nNetModel.summary())
       
       print("nEpochs : %.1f --> Epochs: %d.\nTraining begins: Epoch 0/%d"%(nEpochs__, nEpochs, nEpochs))
@@ -173,7 +185,8 @@ class DeepTFSupervised(object):
       currentCheckPointName= self.checkPointsNameTemplate%modelNum
       if os.path.isfile( currentCheckPointName ):
         print("loading model %s"%(currentCheckPointName))
-        self.nNetModel= keras.models.load_model( currentCheckPointName )
+        self.loadNNet( currentCheckPointName, keepTraining=False)
+
       else:
         raise ValueError("Neural net must be trained before prediction")
       
