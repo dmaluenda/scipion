@@ -272,7 +272,11 @@ class XmippProtConsensusPicking(ProtParticlePicking):
             consensus = len(self.inputCoordinates)
         else:
             consensus = self.consensus.get()
-        consensusCoords = allCoords[votes>=consensus,:]
+        if self.consensusMode==0:
+            consensusCoords = allCoords[votes>=consensus,:]
+        else:
+            consensusCoords = allCoords[votes==consensus,:]
+           
         try:
             jaccardIdx = float(len(consensusCoords)) / (
             float(len(allCoords)) / len(self.inputCoordinates))

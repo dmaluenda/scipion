@@ -261,6 +261,7 @@ class XmippProtScreenParticles(ProtProcessParticles):
         if self.autoParRejectionSSNR == self.REJ_PERCENTAGE_SSNR:
             args += "--ssnrpercent " + str(self.percentageSSNR.get())
         self.runJob("xmipp_image_ssnr", args)
+
         streamMode = Set.STREAM_CLOSED \
             if getattr(self, 'finished', False) else Set.STREAM_OPEN
         outSet = self._loadOutputSet(SetOfParticles, 'outputParticles.sqlite',

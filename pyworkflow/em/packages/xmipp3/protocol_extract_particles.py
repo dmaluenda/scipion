@@ -240,7 +240,6 @@ class XmippProtExtractParticles(ProtExtractParticles, XmippProtocol):
             
             if doBorders:
                 args += " --fillBorders"
-
             self.runJob("xmipp_micrograph_scissor", args)
 
             # Normalize

@@ -202,7 +202,7 @@ python = env.addLibrary(
     'python',
     tar='Python-2.7.14.tgz',
     targets=[env.getLib('python2.7'), env.getBin('python')],
-    flags=['--enable-shared'],
+    flags=['--enable-unicode=ucs4', '--enable-shared', '--with-ssl'],
     deps=[sqlite, tk, zlib])
 
 pcre = env.addLibrary(
@@ -289,6 +289,13 @@ nfft3 = env.addLibrary(
     deps=[fftw3],
     default=False)
 
+# Required by tensorflow
+bazel = env.addLibrary(
+    'bazel',
+    tar='bazel-0.4.5.tgz',
+    commands=[('cd software/tmp/bazel-0.4.5; bash ./compile.sh; cp output/bazel ../../bin', 'software/bin/bazel')],
+    default=False)
+
 #  ************************************************************************
 #  *                                                                      *
 #  *                           Python Modules                             *
@@ -347,8 +354,42 @@ cython = env.addPipModule('cython', '0.22', target='Cython-0.22*', default=False
 cythongsl = env.addPipModule('cythongsl','0.2.1',
                          target='CythonGSL-0.2.1*',
                          default=False, deps=[cython])
-env.addPipModule('scikit-learn', '0.17', target='scikit_learn*',
+scikit_learn=env.addPipModule('scikit-learn', '0.17', target='scikit_learn*',
              default=False, deps=[scipy, cython])
+unittest2= env.addPipModule('unittest2', '0.5.1', target='unittest2*', default=False)
+h5py= env.addPipModule('h5py', '2.8.0rc1', target='h5py*', default=False, deps=[unittest2])
+keras=env.addPipModule('keras', '2.1.5', target='keras*', default=False, deps=[h5py])
+joblib= env.addPipModule('joblib', '0.11', target='joblib*', default=False)
+
+if get('CUDA'):
+    CUDNN_VERSION= os.environ.get('CUDNN_VERSION')
+    CUDA_VERSION= os.environ.get('CUDA_VERSION')
+    CUDNN_VERSION= int(float(CUDNN_VERSION)) if CUDNN_VERSION else None
+    CUDA_VERSION= int(float(CUDA_VERSION)) if CUDA_VERSION else None
+    
+    #FIXME: CUDNN must be installed but nvidia does not allow distribution. How does anaconda do?
+    if CUDNN_VERSION==6 and CUDA_VERSION==8:
+      #works with CUDNN>=6.0 and cuda 8
+      url = 'https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow_gpu-1.4.0rc1-cp27-none-linux_x86_64.whl'
+    elif CUDNN_VERSION==7 and CUDA_VERSION==9:    
+      #works with CUDNN==7.0 and cuda 9
+      url = 'https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow_gpu-1.8.0-cp27-none-linux_x86_64.whl'
+    else:
+      raise ValueError("Error, to install tensorflow you must previously install cuda 8 and cudnn 6 or \n"+
+                       "cuda 9 and cudnn 7. Your cuda version is %s and your cudnn version is %s"%(CUDA_VERSION,
+                                                                                                   CUDNN_VERSION))      
+    pipCmd = "python %s/pip install --upgrade %s" % (env.getPythonPackagesFolder(), url)
+    env.addPipModule('tensorflow', '1.4.0', target='tensorflow', pipCmd=pipCmd,
+             default=False, deps=[keras, h5py, joblib])
+    env.addPipModule('tensorflow-gpu', '1.4.0', target='tensorflow', pipCmd=pipCmd,
+             default=False, deps=[keras, h5py, joblib])
+else:
+    url = 'https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.4.0rc1-cp27-none-linux_x86_64.whl'
+    pipCmd = "python %s/pip install --upgrade %s" % (env.getPythonPackagesFolder(), url)
+    env.addPipModule('tensorflow', '1.4.0', target='tensorflow', pipCmd=pipCmd,
+             default=False, deps=[keras, h5py, joblib])
+
+
 
 
 #  ************************************************************************
