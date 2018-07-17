@@ -27,6 +27,7 @@
 import os
 from itertools import izip
 
+from pyworkflow.em.packages.xmipp3 import XmippProtExtractParticles
 from pyworkflow.protocol.params import PointerParam, \
     FileParam, StringParam, IntParam
 from pyworkflow.em.protocol import EMProtocol
@@ -84,12 +85,6 @@ class ProtUserSubSet(BatchProtocol):
                 output = classSet[volId].getRepresentative()
             self._defineOutputs(outputVolume=output)
 
-        # elif isinstance(inputObj, SetOfParticles) and \
-        #      isinstance(other, SetOfCoordinates):
-        #     print ' > > >  ! OUH YEAAAAAH !  < < < '
-        #     output = self._createCoordsFromParticles(inputObj, other)
-
-
         elif isinstance(inputObj, SetOfImages):
                 output = self._createSubSetFromImages(inputObj)
 
@@ -109,6 +104,10 @@ class ProtUserSubSet(BatchProtocol):
 
         elif isinstance(inputObj, ParticlesTiltPair):
             output = self._createSubSetFromParticlesTiltPair(inputObj)
+
+        elif isinstance(inputObj, XmippProtExtractParticles):
+
+
 
         elif isinstance(inputObj, EMProtocol):
             otherid = self.other.get()
@@ -150,6 +149,9 @@ class ProtUserSubSet(BatchProtocol):
             self._defineTransformRelation(inputObj, output)
 
         return output
+
+    def _createCoordsFromParticles(self, inputImages):
+        print ' > > >  ! OUH YEAAAAAH 2 !  < < < '
 
     def _createSubSetFromImages(self, inputImages,
                                 copyInfoCallback=None):

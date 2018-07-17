@@ -50,7 +50,6 @@ public class ScipionGalleryJFrame extends GalleryJFrame {
     private JButton createvolbt;
     private String setType;
     private boolean recalculateCTF;
-    private Integer coordCons;
 
     private static final String runProtCreateSubset = "run protocol ProtUserSubSet inputObject=%s sqliteFile='%s','%s' outputClassName=%s other='%s' label='%s'";
     
@@ -75,7 +74,6 @@ public class ScipionGalleryJFrame extends GalleryJFrame {
             msgfields.put(runNameKey, "create subset");
             other = parameters.other;
             recalculateCTF = parameters.recalculateCTF;
-            coordCons = parameters.coordCons;
             initComponents();
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
@@ -101,7 +99,9 @@ public class ScipionGalleryJFrame extends GalleryJFrame {
         if (type != null) {
             if(!data.isCTFMd()) {
                 System.out.println(" > > >  H E R E  < < <");
-                if (coordCons != -1) {
+                System.out.println(" other = "+other);
+                if (other.equals("coordsCons")) {
+                    System.out.println("  >   inside conditional: deepCons discovered!   <");
                     cmdbutton = XmippWindowUtil.getScipionIconButton("Create Coordinates");
                     cmdbutton.addActionListener(new ActionListener() {
                         @Override

@@ -53,7 +53,6 @@ public class Params {
     public final static String INVERTY = "inverty";
     private static final String NO_RECALCULATE_CTF = "dont_recalc_ctf";
 
-
     public String directory;
     public String files[];
     public Integer port;
@@ -91,7 +90,7 @@ public class Params {
     public boolean inverty;
 	public boolean renderImages = true;
     public boolean recalculateCTF = true;
-    public Integer coordCons = -1;
+    public Integer coordCons;
 
 
     public Params() {
@@ -162,7 +161,6 @@ public class Params {
         options.addOption(INVERTY, false, "");
         // Do not offer to recalculate CFT if true
         options.addOption(NO_RECALCULATE_CTF, false, "");
-
 
     }
     
@@ -298,7 +296,6 @@ public class Params {
                 chimeraPort = Integer.parseInt(cmdLine.getOptionValue(CHIMERAPORT));
             }
             inverty = cmdLine.hasOption(INVERTY);
-           
            
            
         } catch (Exception ex) {
