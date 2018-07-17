@@ -27,7 +27,7 @@
 import os
 from itertools import izip
 
-from pyworkflow.em.packages.xmipp3 import XmippProtExtractParticles
+# from pyworkflow.em.packages.xmipp3 import XmippProtExtractParticles
 from pyworkflow.protocol.params import PointerParam, \
     FileParam, StringParam, IntParam
 from pyworkflow.em.protocol import EMProtocol
@@ -105,8 +105,8 @@ class ProtUserSubSet(BatchProtocol):
         elif isinstance(inputObj, ParticlesTiltPair):
             output = self._createSubSetFromParticlesTiltPair(inputObj)
 
-        elif isinstance(inputObj, XmippProtExtractParticles):
-
+        # elif isinstance(inputObj, XmippProtExtractParticles):
+        #     pass
 
 
         elif isinstance(inputObj, EMProtocol):
