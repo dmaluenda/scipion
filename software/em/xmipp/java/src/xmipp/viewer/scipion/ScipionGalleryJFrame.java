@@ -100,7 +100,7 @@ public class ScipionGalleryJFrame extends GalleryJFrame {
             if(!data.isCTFMd()) {
                 System.out.println(" > > >  H E R E  < < <");
                 System.out.println(" other = "+other);
-                if (other.equals("coordsCons")) {
+                if (other.startsWith("coordsCons")) {
                     System.out.println("  >   inside conditional: deepCons discovered!   <");
                     cmdbutton = XmippWindowUtil.getScipionIconButton("Create Coordinates");
                     cmdbutton.addActionListener(new ActionListener() {
@@ -311,7 +311,7 @@ public class ScipionGalleryJFrame extends GalleryJFrame {
         else
             size = data.getEnabledCount();
 
-        if (confirmCreate(type, size))
+        if (confirmCreate("Coordinates", size))
         {
             String command = String.format(runProtCreateSubset,
                     inputid, sqlitefile, data.getPreffix(), String.format("SetOfCoordinates"), other, getRunLabel());

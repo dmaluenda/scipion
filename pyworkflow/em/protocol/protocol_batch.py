@@ -85,8 +85,16 @@ class ProtUserSubSet(BatchProtocol):
                 output = classSet[volId].getRepresentative()
             self._defineOutputs(outputVolume=output)
 
+        elif isinstance(inputObj, SetOfParticles) and \
+                other.startswith('coordsCons'):
+            print ' > > > OUH YEAH ! < < <'
+            coordsId = int(other.strip('coordsCons'))
+            coordsSet = self.getProject().mapper.selectById(coordsId)
+            output = self._createCoordsFromParticles(inputObj, coordsSet)
+
+
         elif isinstance(inputObj, SetOfImages):
-                output = self._createSubSetFromImages(inputObj)
+            output = self._createSubSetFromImages(inputObj)
 
         elif isinstance(inputObj, SetOfClasses):
             output = self._createSubSetFromClasses(inputObj)
@@ -104,10 +112,6 @@ class ProtUserSubSet(BatchProtocol):
 
         elif isinstance(inputObj, ParticlesTiltPair):
             output = self._createSubSetFromParticlesTiltPair(inputObj)
-
-        # elif isinstance(inputObj, XmippProtExtractParticles):
-        #     pass
-
 
         elif isinstance(inputObj, EMProtocol):
             otherid = self.other.get()
@@ -150,8 +154,36 @@ class ProtUserSubSet(BatchProtocol):
 
         return output
 
-    def _createCoordsFromParticles(self, inputImages):
+    def _createCoordsFromParticles(self, inputObj, coordsSet):
         print ' > > >  ! OUH YEAAAAAH 2 !  < < < '
+        print 'Select Particles = %s' % inputObj
+        print 'Full Coords = %s' % coordsSet
+
+        modifiedSet = inputObj.getClass()(filename=self._dbName, prefix=self._dbPrefix)
+
+        output = self._createSetOfCoordinates(coordsSet.getMicrographs())
+
+        for part in modifiedSet:
+            if part.isEnabled():
+                coord = part.getCoordinate().clone()
+                coord.scale(.1)                                 # FIXME: scale????????????????????????
+                output.append(coord)
+
+        output.copyInfo(coordsSet)
+        output.setBoxSize(coordsSet.getBoxSize())
+
+        # Register outputs
+        self._defineOutput(coordsSet.getClassName(), output)
+
+        if inputObj.hasObjId():
+            self._defineTransformRelation(inputObj, output)
+
+        if coordsSet.hasObjId():
+            self._defineTransformRelation(coordsSet, output)
+
+        return output
+
+
 
     def _createSubSetFromImages(self, inputImages,
                                 copyInfoCallback=None):

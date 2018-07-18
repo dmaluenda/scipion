@@ -585,10 +585,11 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         partSet.write()
         
         self._defineOutputs(outputCoordinates=coordSet)        
-#        self._defineOutputs(outputParticles=partSet)
+        self._defineOutputs(outputParticles=partSet)
         
         for inSetOfCoords in self.inputCoordinates:
-            self._defineSourceRelation( inSetOfCoords.get(), coordSet)
+            self._defineSourceRelation(inSetOfCoords.get(), coordSet)
+            self._defineSourceRelation(inSetOfCoords.get(), partSet)
         
         print(self.coordinatesDict['OR'].getBoxSize())
 #        raise ValueError("peta")

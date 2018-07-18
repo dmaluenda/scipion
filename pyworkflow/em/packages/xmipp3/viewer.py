@@ -55,6 +55,7 @@ from protocol_preprocess import XmippProtPreprocessVolumes
 from protocol_preprocess_micrographs import XmippProtPreprocessMicrographs
 from protocol_rotational_spectra import XmippProtRotSpectra
 from protocol_screen_particles import XmippProtScreenParticles
+from protocol_screen_deepConsensus import XmippProtScreenDeepConsensus
 from protocol_ctf_micrographs import XmippProtCTFMicrographs
 from pyworkflow.em.showj import *
 from protocol_validate_nontilt import XmippProtValidateNonTilt
@@ -84,7 +85,7 @@ class XmippViewer(Viewer):
                 XmippProtCompareReprojections,
                 XmippProtCompareAngles,
                 XmippParticlePickingAutomatic,
-                # XmippScreenDeepConsensus,               # ------------AND-IMPORT--------------------------
+                XmippProtScreenDeepConsensus,
                 XmippProtExtractParticles,
                 XmippProtExtractParticlesPairs,
                 XmippProtKerdensom,
@@ -281,29 +282,24 @@ class XmippViewer(Viewer):
             writeSetOfCoordinates(tmpDir, obj.getTilted())
             launchTiltPairPickerGUI(mdFn, tmpDir, self.protocol)
 
+        elif issubclass(cls, XmippProtScreenDeepConsensus):
 
 
+            parts = obj.outputParticles
+            fnParts = parts.getFileName()
+            coordsId = obj.outputCoordinates.get().strId()
 
+            labels  = 'id enabled _index _filename _xmipp_zScoreDeepLearning1 '
+            labels += '_xmipp_zScore _xmipp_cumulativeSSNR _sampling '
+            labels += '_xmipp_scoreEmptiness _ctfModel._defocusU _ctfModel._defocusV '
+            labels += '_ctfModel._defocusAngle _transform._matrix'
 
-
-        elif issubclass(cls, XmippProtExtractParticles):  # ------------------------------ XmippScreenDeepConsensus -----
-            fnParts = obj._getPath('particles.sqlite')
-
-            coordsId = 24201  # obj.outputCoordinates.getObjId()
-
-            labels  = 'id enabled _index _filename _xmipp_zScoreDeepLearning1 _xmipp_zScore '
-            labels += '_xmipp_cumulativeSSNR _sampling _xmipp_scoreEmptiness '
-            labels += '_ctfModel._defocusU _ctfModel._defocusV _ctfModel._defocusAngle _transform._matrix'
-            self._views.append(ObjectView(self._project, obj.strId(), fnParts, other='coordsCons',
-                                          viewParams={ORDER: labels,
-                                                      VISIBLE: labels,
-                                                      'sortby': '_xmipp_zScoreDeepLearning1 asc',
-                                                      RENDER:'_filename'}))
-
-
-
-
-
+            self._views.append(
+                ObjectView(self._project, parts.strId(), fnParts,
+                           other='coordsCons%s'%coordsId,
+                           viewParams={ORDER: labels, VISIBLE: labels,
+                                       'sortby': '_xmipp_zScoreDeepLearning1 asc',
+                                       RENDER:'_filename'}))
 
         elif (issubclass(cls, XmippProtExtractParticles) or
               issubclass(cls, XmippProtScreenParticles)):
