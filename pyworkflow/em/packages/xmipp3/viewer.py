@@ -284,10 +284,19 @@ class XmippViewer(Viewer):
 
         elif issubclass(cls, XmippProtScreenDeepConsensus):
 
-
             parts = obj.outputParticles
             fnParts = parts.getFileName()
-            coordsId = obj.outputCoordinates.get().strId()
+            coordsId = obj.outputCoordinates.strId()
+            
+            fnXml = obj._getPath('particles.xmd')
+            md = xmipp.MetaData(fnXml)
+            if md.containsLabel(xmipp.MDL_ZSCORE_DEEPLEARNING1):
+                from plotter import XmippPlotter
+                xplotter = XmippPlotter(windowTitle="Deep consensus score")
+                xplotter.createSubPlot("Deep consensus score", "Deep consensus score", "Number of Particle")
+                xplotter.plotMd(md, False, mdLabelY=xmipp.MDL_ZSCORE_DEEPLEARNING1, nbins=200)
+                self._views.append(xplotter)
+            
 
             labels  = 'id enabled _index _filename _xmipp_zScoreDeepLearning1 '
             labels += '_xmipp_zScore _xmipp_cumulativeSSNR _sampling '

@@ -162,14 +162,16 @@ class ProtUserSubSet(BatchProtocol):
 
         output = self._createSetOfCoordinates(coordsSet.getMicrographs())
 
+        boxSize = coordsSet.getBoxSize()
+        downFactor = boxSize / float(inputObj.getXDim())
         for part in modifiedSet:
             if part.isEnabled():
                 coord = part.getCoordinate().clone()
-                coord.scale(.1)                                 # FIXME: scale????????????????????????
+                coord.scale(downFactor)                                 # FIXME: scale????????????????????????
                 output.append(coord)
 
         output.copyInfo(coordsSet)
-        output.setBoxSize(coordsSet.getBoxSize())
+        output.setBoxSize(boxSize)
 
         # Register outputs
         self._defineOutput(coordsSet.getClassName(), output)

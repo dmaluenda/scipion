@@ -561,7 +561,7 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         cleanPattern( self._getPath("*.sqlite") )
         partSet = self._createSetOfParticles()
         readSetOfParticles(self._getPath("particles.xmd"), partSet)
-
+        partSet.setSamplingRate( self._getDownFactor()*  self.inputCoordinates[0].get().getMicrographs().getSamplingRate() )
         boxSize = self._getBoxSize()
         # COORDINATES
         if not "OR" in self.coordinatesDict:
