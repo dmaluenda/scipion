@@ -27,7 +27,6 @@
 import os
 from itertools import izip
 
-# from pyworkflow.em.packages.xmipp3 import XmippProtExtractParticles
 from pyworkflow.protocol.params import PointerParam, \
     FileParam, StringParam, IntParam
 from pyworkflow.em.protocol import EMProtocol
