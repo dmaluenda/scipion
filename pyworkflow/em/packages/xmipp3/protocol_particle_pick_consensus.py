@@ -272,7 +272,7 @@ class XmippProtConsensusPicking(ProtParticlePicking):
             consensus = len(self.inputCoordinates)
         else:
             consensus = self.consensus.get()
-        if self.consensusMode==0:
+        if self.consensus==0:
             consensusCoords = allCoords[votes>=consensus,:]
         else:
             consensusCoords = allCoords[votes==consensus,:]

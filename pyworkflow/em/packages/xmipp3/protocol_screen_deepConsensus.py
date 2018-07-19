@@ -293,14 +293,17 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         return self.downFactor
 
 
-    def insertCaculateConsensusSteps(self, micIds, mode, prerequisites):
+    def insertCaculateConsensusSteps(self, micIds, mode, prerequisites): #TODO: make it paraellel. It does not work due to concurrency and sqlite cursor
         # Take the sampling rates
         deps=[]
+        dep_= prerequisites
         consensus= -1 if mode=="AND" else 1
         newDataPath= XmippProtScreenDeepConsensus.CONSENSUS_COOR_PATH_TEMPLATE%mode
         makePath(self._getExtraPath(newDataPath))
         for micId in micIds:
-            deps.append(self._insertFunctionStep('calculateConsensusStep', micId, newDataPath, consensus, prerequisites= prerequisites ))
+            dep= self._insertFunctionStep('calculateConsensusStep', micId, newDataPath, consensus, prerequisites= dep_ )
+            dep_= [dep]
+            deps.append( dep )
             
         newDep= self._insertFunctionStep('loadConsensusCoords',  newDataPath, mode, True, prerequisites=deps )
         deps= [newDep]
