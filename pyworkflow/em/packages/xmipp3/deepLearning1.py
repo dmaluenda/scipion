@@ -46,7 +46,7 @@ def updateEnviron(gpuNum=None):
   if not gpuNum is None:
     os.environ['LD_LIBRARY_PATH']= os.environ['CUDA_LIB']+":"+os.environ['CUDA_HOME']+"/extras/CUPTI/lib64"
     os.environ['LD_LIBRARY_PATH']= os.environ['CUDA_LIB']
-    os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST 1 GPU:# must be changed to select desired gpu
+    os.environ['CUDA_VISIBLE_DEVICES']=str(gpuNum)  #THIS IS FOR USING JUST one GPU:# must be changed to select desired gpu
   else:
     os.environ['CUDA_VISIBLE_DEVICES']="-1"
 
@@ -54,10 +54,8 @@ import keras
 from pyworkflow.em.packages.xmipp3.networkDef import main_network
 tf_intarnalError= tf.errors.InternalError
 
-#BATCH_SIZE= 128
-BATCH_SIZE= 32
-
-CHECK_POINT_AT= 100
+BATCH_SIZE= 64
+CHECK_POINT_AT= 20 #In batches
 
 WRITE_TEST_SCORES= True
 
@@ -141,9 +139,9 @@ class DeepTFSupervised(object):
     print("auto_stop:", auto_stop)
     sys.stdout.flush()
     
-    n_steps_per_epoch_train, n_steps_per_epoch_val= dataManagerTrain.getNStepPerEpoch()
+    n_batches_per_epoch_train, n_batches_per_epoch_val= dataManagerTrain.getNBatchesPerEpoch()
     nEpochs__= nEpochs
-    nEpochs= max(1, nEpochs*float(n_steps_per_epoch_train)/CHECK_POINT_AT)
+    nEpochs= max(1, nEpochs*float(n_batches_per_epoch_train)/CHECK_POINT_AT)
     for modelNum in range(self.numberOfModels):
       self.startSessionAndInitialize()
       print("Training model %d/%d"%((modelNum+1), self.numberOfModels))  
@@ -168,8 +166,8 @@ class DeepTFSupervised(object):
                  verbose=1) ]
       
       self.nNetModel.fit_generator(dataManagerTrain.getTrainIterator(),steps_per_epoch= CHECK_POINT_AT,
-                                 validation_data=dataManagerTrain.getValidationIterator( batchesPerEpoch= n_steps_per_epoch_val), 
-                                 validation_steps=n_steps_per_epoch_val, callbacks=cBacks, epochs=nEpochs, 
+                                 validation_data=dataManagerTrain.getValidationIterator( batchesPerEpoch= n_batches_per_epoch_val), 
+                                 validation_steps=n_batches_per_epoch_val, callbacks=cBacks, epochs=nEpochs, 
                                  use_multiprocessing=True, verbose=2)
       del self.nNetModel      
       self.closeSession()
@@ -245,9 +243,9 @@ class DataManager(object):
     self.validationFraction= validationFraction
     
     if validationFraction!=0:
-        assert 0 not in self.getNStepPerEpoch(), "Error, the number of positive particles for training is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
+        assert 0 not in self.getNBatchesPerEpoch(), "Error, the number of positive particles for training is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
     else:
-        assert self.getNStepPerEpoch()[0] != 0, "Error, the number of particles for testing is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
+        assert self.getNBatchesPerEpoch()[0] != 0, "Error, the number of particles for testing is to small (%d). Must be >> %d"%(self.nTrue, BATCH_SIZE)
  
     if validationFraction>0:
       self.trainingIdsPos= np.random.choice( self.nTrue,  int((1-validationFraction)*self.nTrue), False)
@@ -273,7 +271,7 @@ class DataManager(object):
     nParticles=0
     shapeParticles=(None, None, 1)
     for fnameXMDF in sorted(dictData):
-      weight= dictData[fnameXMDF]
+      weight= dictData[fnameXMDF]          
       mdObject  = md.MetaData(fnameXMDF)
       I= xmipp.Image()
       I.read(mdObject.getValue(md.MDL_IMAGE, mdObject.firstObject()))
@@ -287,6 +285,13 @@ class DataManager(object):
         assert tmpShape== shapeParticles, "Error, particles of different shapes mixed"
       else:
         shapeParticles= tmpShape
+      if weight<=0:
+          otherParticlesNum=0
+          for fnameXMDF_2 in sorted(dictData):
+              weight_2= dictData[fnameXMDF_2]
+              if weight_2>0:
+                  otherParticlesNum+=  md.MetaData(fnameXMDF_2).size()
+          weight= max(1, otherParticlesNum // tmpNumParticles)
       weightsList_merged+= [ weight  for elem in imgFnames]
       nParticles+= tmpNumParticles
     print(sorted(dictData))
@@ -427,7 +432,7 @@ class DataManager(object):
     if n>0:
       yield batchStack[:n,...], batchLabels[:n,...]
 
-  def getNStepPerEpoch(self):
+  def getNBatchesPerEpoch(self):
     return ( int((1-self.validationFraction)*self.nTrue*2./self.batchSize), 
              int(self.validationFraction*self.nTrue*2./self.batchSize ) )
              

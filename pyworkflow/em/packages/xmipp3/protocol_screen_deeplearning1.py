@@ -75,7 +75,10 @@ class XmippProtScreenDeepLearning1(ProtProcessParticles):
             form.addParam('inNegWeight_%d'%num, params.IntParam, default='1',
                             condition='(numberOfNegativeSets<=0 or numberOfNegativeSets >=%d) and (not doContinue or keepTraining)'%num,
                             label="Weight of negative train particles %d"%num, allowsNull=True,
-                            help='Select the weigth for the negative set of particles.')
+                            help='Select the weigth for the negative set of particles. The weight value '
+                                 'indicates the number of times each image may be included at most per epoch. Positive '
+                                 'particles are weighted with 1. If weight is -1, weight will be calculated such that '
+                                 'the contribution of additional data is equal to the contribution of positive particles')
 
         form.addParam('predictSetOfParticles', params.PointerParam, label="Set of putative particles to predict",
                       pointerClass='SetOfParticles',
@@ -309,8 +312,19 @@ def trainWorker(netDataPath, posTrainDict, negTrainDict, nEpochs, learningRate, 
             numberOfThreads= multiprocessing.cpu_count()
     updateEnviron(gpuToUse)
                 
-
-    from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, tf_intarnalError
+    try:
+        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, tf_intarnalError
+    except ImportError:
+        raise ValueError('''
+     Error, tensorflow is not installed. Install it with:\n  ./scipion install tensorflow
+     If gpu version of tensorflow desired, install cuda 8 and cudnn 6 or cuda 9 and cudnn 7 add to scipion.conf
+     CUDA = True
+     CUDA_VERSION = 8.0  or 9.0
+     CUDA_HOME = /path/to/cuda-8
+     CUDA_BIN = %(CUDA_HOME)s/bin
+     CUDA_LIB = %(CUDA_HOME)s/lib64
+     CUDNN_VERSION = 6 or 7
+''')
     
     
     trainDataManager= DataManager( posSetDict= posTrainDict, negSetDict= negTrainDict)
@@ -348,14 +362,31 @@ def predictWorker( netDataPath, posTestDict, negTestDict, predictDict, outPartic
             numberOfThreads= multiprocessing.cpu_count()
     updateEnviron(gpuToUse)
     
-    from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager
-
+    try:
+        from pyworkflow.em.packages.xmipp3.deepLearning1 import  DeepTFSupervised, DataManager, tf_intarnalError
+    except ImportError:
+        raise ValueError('''
+     Error, tensorflow is not installed. Install it with:\n  ./scipion install tensorflow
+     If gpu version of tensorflow desired, install cuda 8 and cudnn 6 or cuda 9 and cudnn 7 add to scipion.conf
+     CUDA = True
+     CUDA_VERSION = 8.0  or 9.0
+     CUDA_HOME = /path/to/cuda-8
+     CUDA_BIN = %(CUDA_HOME)s/bin
+     CUDA_LIB = %(CUDA_HOME)s/lib64
+     CUDNN_VERSION = 6 or 7
+''')
 
     predictDataManager= DataManager( posSetDict= predictDict, negSetDict= None)
     dataShape, nTrue, numModels= loadNetShape(netDataPath)
-
-    nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=netDataPath, 
-                            numberOfModels=numModels)
+    try:
+        nnet = DeepTFSupervised(numberOfThreads= numberOfThreads, rootPath=netDataPath, 
+                                numberOfModels=numModels)
+    except tf_intarnalError as e:
+        if e._error_code==13:
+            raise Exception("Out of gpu Memory. gpu # %d"%(gpuToUse))
+        else:
+            raise e
+            
     y_pred, label_Id_dataSetNumIterator= nnet.predictNet(predictDataManager)
     
     metadataPosList, metadataNegList= predictDataManager.getMetadata(None)

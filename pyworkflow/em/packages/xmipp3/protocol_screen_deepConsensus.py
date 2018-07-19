@@ -48,9 +48,8 @@ import numpy as np
 from joblib import Parallel, delayed
 
 DEEP_PARTICLE_SIZE= 128
-#DEEP_PARTICLE_SIZE= 300
 
-MIN_NUM_CONSENSUS_COORDS= 100
+MIN_NUM_CONSENSUS_COORDS= 256
 
 class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearning1):
     """ TODO: HELP
@@ -76,7 +75,9 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
     CONSENSUS_COOR_PATH_TEMPLATE="cosensus_%s"
     def __init__(self, **args):
         ProtParticlePicking.__init__(self, **args)
-        self.stepsExecutionMode = params.STEPS_SERIAL
+#        self.stepsExecutionMode = params.STEPS_SERIAL
+        self.stepsExecutionMode = params.STEPS_PARALLEL
+
 
     def _defineParams(self, form):
         form.addSection(label='Input')
@@ -184,7 +185,10 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         form.addParam('trainPosWeight', params.IntParam, default='1',
                             condition='addTrainingData',
                             label="Weight of positive additional train particles", allowsNull=True,
-                            help='Select the weigth for the additional train set of positive particles.')
+                            help='Select the weigth for the additional train set of positive particles.The weight value '
+                                 'indicates the number of times each image may be included at most per epoch. Deep consensus '
+                                 'internal particles are weighted with 1. If weight is -1, weight will be calculated such that '
+                                 'the contribution of additional data is equal to the contribution of internal particles')
         
         form.addParam('trainNegSetOfParticles', params.PointerParam, condition='addTrainingData',
                       label="Negative train particles (optional)",
@@ -193,7 +197,10 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         form.addParam('trainNegWeight', params.IntParam, default='1',
                             condition='addTrainingData',
                             label="Weight of negative additional train particles", allowsNull=True,
-                            help='Select the weigth for the additional train set of negative particles.')
+                            help='Select the weigth for the additional train set of negative particles. The weight value '
+                                 'indicates the number of times each image may be included at most per epoch. Deep consensus '
+                                 'internal particles are weighted with 1. If weight is -1, weight will be calculated such that '
+                                 'the contribution of additional data is equal to the contribution of internal particles')
         
         form.addSection(label='Testing data')
         form.addParam('doTesting', params.BooleanParam, default=False,
@@ -228,23 +235,22 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         allMicIds= self._getInputMicrographs().getIdSet()        
         
         deps=[]
-        self._insertFunctionStep("initializeStep")
-        self.insertMicsPreprocSteps(allMicIds)
-        self.insertCaculateConsensusSteps( allMicIds, 'OR') #OR before noise always
-
+        deps.append(self._insertFunctionStep("initializeStep", prerequisites= deps))
+        depsPrepMic= self.insertMicsPreprocSteps(allMicIds, prerequisites= deps)
+        depsOr= self.insertCaculateConsensusSteps( allMicIds, 'OR', prerequisites= depsPrepMic) #OR before noise always
+        depsOr= self.insertExtractPartSteps( allMicIds, 'OR', prerequisites= depsOr)
+        depsTrain= depsOr
         if not self.doContinue.get()  or self.keepTraining.get():
-            self._insertFunctionStep('pickNoise')
-                        
-            self.insertCaculateConsensusSteps( allMicIds, 'AND')
-            self.insertExtractPartSteps( allMicIds, 'AND')
-                        
-            self.insertExtractPartSteps( allMicIds, 'NOISE')
-
-        self.insertExtractPartSteps( allMicIds, 'OR')
+            depNoise=  self._insertFunctionStep('pickNoise', prerequisites= depsPrepMic+depsOr) 
+            depsNoise= self.insertExtractPartSteps( allMicIds, 'NOISE', prerequisites= [depNoise])
+     
+            depsAnd= self.insertCaculateConsensusSteps( allMicIds, 'AND', prerequisites= depsPrepMic)
+            depsAnd= self.insertExtractPartSteps( allMicIds, 'AND', prerequisites= depsAnd)
+            depsTrain= depsTrain +  depsNoise+depsAnd
                     
-        self._insertFunctionStep('trainCNN', )
-        self._insertFunctionStep('predictCNN', )
-        self._insertFunctionStep('createOutputStep')
+        depTrain= self._insertFunctionStep('trainCNN', prerequisites= depsTrain ) 
+        depPredict= self._insertFunctionStep('predictCNN', prerequisites= [depTrain] ) 
+        self._insertFunctionStep('createOutputStep', prerequisites= [depPredict])
         
     def initializeStep(self):
         '''
@@ -255,12 +261,12 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
             consensusCoordsPath= XmippProtScreenDeepConsensus.CONSENSUS_COOR_PATH_TEMPLATE%mode
             makePath(self._getExtraPath(consensusCoordsPath))
         if self.testPosSetOfParticles.get() and self.testNegSetOfParticles.get():
-            writeSetOfParticles(self.testPosSetOfParticles.get(), "testTrueParticlesSet.xmd")
-            writeSetOfParticles(self.testNegSetOfParticles.get(), "testFalseParticlesSet.xmd")
+            writeSetOfParticles(self.testPosSetOfParticles.get(), self._getExtraPath("testTrueParticlesSet.xmd"))
+            writeSetOfParticles(self.testNegSetOfParticles.get(), self._getExtraPath("testFalseParticlesSet.xmd"))
 
         if self.trainPosSetOfParticles.get() and self.trainNegSetOfParticles.get():
-            writeSetOfParticles(self.trainPosSetOfParticles.get(), "trainTrueParticlesSet.xmd")
-            writeSetOfParticles(self.trainNegSetOfParticles.get(), "trainFalseParticlesSet.xmd")
+            writeSetOfParticles(self.trainPosSetOfParticles.get(), self._getExtraPath("trainTrueParticlesSet.xmd"))
+            writeSetOfParticles(self.trainNegSetOfParticles.get(), self._getExtraPath("trainFalseParticlesSet.xmd"))
             
     def _getInputMicrographs(self):
         
@@ -287,15 +293,18 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         return self.downFactor
 
 
-    def insertCaculateConsensusSteps(self, micIds, mode):
+    def insertCaculateConsensusSteps(self, micIds, mode, prerequisites):
         # Take the sampling rates
+        deps=[]
         consensus= -1 if mode=="AND" else 1
         newDataPath= XmippProtScreenDeepConsensus.CONSENSUS_COOR_PATH_TEMPLATE%mode
         makePath(self._getExtraPath(newDataPath))
         for micId in micIds:
-            self._insertFunctionStep('calculateConsensusStep', micId, newDataPath, consensus)
+            deps.append(self._insertFunctionStep('calculateConsensusStep', micId, newDataPath, consensus, prerequisites= prerequisites ))
             
-        self._insertFunctionStep('loadConsensusCoords',  newDataPath, mode, True )
+        newDep= self._insertFunctionStep('loadConsensusCoords',  newDataPath, mode, True, prerequisites=deps )
+        deps= [newDep]
+        return deps
         
     def calculateConsensusStep(self, micId, newDataPath, consensus):
 
@@ -400,21 +409,24 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         
         Parallel(n_jobs= self.numberOfThreads.get()* self.numberOfMpi.get(), backend="multiprocessing", verbose=1)(
                 delayed(pickWorker, check_pickle=False)( *arg )  for arg in argsList)
-        
+#        for arg in argsList:
+#            pickWorker( *arg)
         writeSetOfCoordsFromFnames( self._getExtraPath(outputRoot), self.coordinatesDict['OR'],
                                                 self._getExtraPath("consensus_NOISE.sqlite") )
 
-    def insertMicsPreprocSteps(self, micIds):         
+    def insertMicsPreprocSteps(self, micIds, prerequisites):
+        deps= []
         boxSize = self._getBoxSize()
         self.downFactor = boxSize /float(DEEP_PARTICLE_SIZE)
         mics_= self._getInputMicrographs()
         samplingRate = self._getInputMicrographs().getSamplingRate()
-        self._insertFunctionStep("preprocessMicsInitStep")        
+        preproDep= self._insertFunctionStep("preprocessMicsInitStep", prerequisites=prerequisites) 
         for micId in micIds:
             mic= mics_[micId]            
             fnMic = mic.getFileName()
-            self._insertFunctionStep("preprocessOneMicStep", micId, fnMic, samplingRate)
-
+            deps.append( self._insertFunctionStep("preprocessOneMicStep", micId, fnMic, samplingRate, prerequisites=[preproDep]) )
+        return deps
+    
     def preprocessMicsInitStep(self):
         self._getDownFactor()
         mics_= self._getInputMicrographs()
@@ -439,7 +451,8 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
             fnMic= fnPreproc
             
         if not self.skipDoFlip.get():
-             
+            if not hasattr(self, "micToCtf"):
+                self.preprocessMicsInitStep()
             fnCTF = self._getTmpPath("%s.ctfParam" % os.path.basename(fnMic))
             micrographToCTFParam( self.micToCtf[ os.path.basename(fnMic) ], fnCTF)
             
@@ -454,17 +467,20 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
             args+= "--invert"
         self.runJob('xmipp_transform_normalize',args, numberOfMpi=1)        
         
-    def insertExtractPartSteps(self, micIds, mode):
+    def insertExtractPartSteps(self, micIds, mode, prerequisites):
+        deps= []
         mics_= self._getInputMicrographs()
-        self._insertFunctionStep("prepareExtractParticles", mode)
+        newDep= self._insertFunctionStep("prepareExtractParticles", mode, prerequisites= prerequisites)
+        prerequisites= [newDep]
         for micId in micIds:   
             mic = mics_[micId]
             fnMic = mic.getFileName()
             fnMic = self._getExtraPath('preProcMics', os.path.basename(fnMic))
             fnPos= self._getExtraPath('coord_%s'%mode, pwutils.removeBaseExt(fnMic)+".pos") 
-            self._insertFunctionStep("extractParticlesStep", fnMic, fnPos, mode, numberOfMpi=1)
-        self._insertFunctionStep("joinSetOfParticlesStep", micIds, mode)
-        
+            deps.append(self._insertFunctionStep("extractParticlesStep", fnMic, fnPos, mode, numberOfMpi=1, prerequisites= prerequisites) )
+        newDep= self._insertFunctionStep("joinSetOfParticlesStep", micIds, mode, prerequisites= deps) 
+        deps= [newDep ]  
+        return deps
     def prepareExtractParticles(self, mode):
         try:
             coordSet= self.coordinatesDict[mode]
@@ -530,7 +546,7 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         #TODO define weight behaviour
         if self.trainPosSetOfParticles.get() and self.trainNegSetOfParticles.get():
             posTrainDict[ self._getExtraPath("trainTrueParticlesSet.xmd") ]= self.trainPosWeight.get()
-            posTrainDict[ self._getExtraPath("trainFalseParticlesSet.xmd") ]= self.trainNegWeight.get()
+            negTrainDict[ self._getExtraPath("trainFalseParticlesSet.xmd") ]= self.trainNegWeight.get()
 
         trainWorker(netDataPath, posTrainDict, negTrainDict, nEpochs, self.learningRate.get(), 
                     self.l2RegStrength.get(), self.auto_stopping.get(), 
@@ -646,9 +662,8 @@ class XmippProtScreenDeepConsensus(ProtParticlePicking, XmippProtScreenDeepLearn
         message = []
         for i, coordinates in enumerate(self.inputCoordinates):
             protocol = self.getMapper().getParent(coordinates.get())
-            message.append("Method %d %s" % (i + 1, protocol.getClassLabel()))
+            message.append("Data source  %d %s" % (i + 1, protocol.getClassLabel()))
         message.append("Relative Radius = %f" % self.consensusRadius)
-        message.append("Consensus = %d" % self.consensus)
         return message
 
     def _methods(self):
