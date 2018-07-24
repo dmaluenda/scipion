@@ -272,7 +272,7 @@ class XmippProtScreenParticles(ProtProcessParticles):
             args += "--addFeatures "
         self.runJob("xmipp_image_sort_by_statistics", args)
 
-        args = "-i Particles@%s -o %s" % (fnInputMd, fnOutputMd)
+        args = "-i Particles@%s -o %s " % (fnInputMd, fnOutputMd)
         if self.autoParRejectionSSNR == self.REJ_PERCENTAGE_SSNR:
             args += "--ssnrpercent " + str(self.percentageSSNR.get())
         self.runJob("xmipp_image_ssnr", args)
@@ -326,17 +326,27 @@ class XmippProtScreenParticles(ProtProcessParticles):
     # -------------------------- INFO functions ------------------------------
     def _summary(self):
         summary = []
-        sumRejMet = {}
+
+        sumRejMet = {}  # A dict with the form choices
         if self.autoParRejection is not None:
-            sumRejMet['Zscore'] = ("Zscore rejection method: " +
-                               self.ZSCORE_CHOICES[self.autoParRejection.get()])
+            metStr = self.ZSCORE_CHOICES[self.autoParRejection.get()]
+            if self.autoParRejection.get() == self.REJ_MAXZSCORE:
+                metStr += " = %.2f" % self.maxZscore.get()
+            elif self.autoParRejection.get() == self.REJ_PERCENTAGE:
+                metStr += " = %.2f" % self.percentage.get()
+            sumRejMet['Zscore'] = ("Zscore rejection method: " + metStr)
+
         if self.autoParRejectionSSNR is not None:
-            sumRejMet['SSNR'] = ("SSNR rejection method: " +
-                             self.SSNR_CHOICES[self.autoParRejectionSSNR.get()])
+            metStr = self.SSNR_CHOICES[self.autoParRejectionSSNR.get()]
+            if self.autoParRejectionSSNR.get() == self.REJ_PERCENTAGE_SSNR:
+                metStr += " = %.2f" % self.percentageSSNR.get()
+            sumRejMet['SSNR'] = ("SSNR rejection method: " + metStr)
+
         if self.autoParRejectionVar is not None:
             sumRejMet['Var'] = ("Variance rejection method: " +
                                self.VAR_CHOICES[self.autoParRejectionVar.get()])
 
+        # If no output yet, just the form choices are shown plus a no-ready text
         if not hasattr(self, 'outputParticles'):
             summary += sumRejMet.values()
             summary.append("Output particles not ready yet.")
@@ -348,14 +358,13 @@ class XmippProtScreenParticles(ProtProcessParticles):
                 meanZScore = self.sumZScore.get() * 1.0 / len(self.outputParticles)
                 summary.append(" - The mean ZScore is %.2f" % meanZScore)
             else:
-                summary += sumRejMet.values()
                 summary.append(
                     "   Summary values not calculated during processing.")
             summary.append(sumRejMet['SSNR'])
             summary.append(sumRejMet['Var'])
             if self.autoParRejectionVar != self.REJ_NONE:
                 if hasattr(self, 'varThreshold'):
-                    summary.append(" - Threshold: %.2f" % self.varThreshold)
+                    summary.append(" - Variance threshold: %.2f" % self.varThreshold)
                 else:
                     summary.append(" - Variance threshold not calculed yet.")
         return summary
