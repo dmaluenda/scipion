@@ -1580,8 +1580,12 @@ class Protocol(Step):
         and there are not errors. If some errors are found, a list with
         the error messages will be returned.
         """
-        validateFunc = getattr(cls.getClassPackage().Plugin,
-                               'validateInstallation', None)
+        try:
+            validateFunc = getattr(cls.getClassPackage().Plugin,
+                                    'validateInstallation', None)
+        except:
+            validateFunc = getattr(cls.getClassPackage(),
+                                   'validateInstallation', None)
         try:
             return validateFunc() if validateFunc is not None else []
         except Exception as e:
