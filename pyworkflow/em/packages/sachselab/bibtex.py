@@ -1,9 +1,8 @@
-# coding: latin-1
 # **************************************************************************
 # *
-# * Authors:     Roberto Marabini (roberto@cnb.csic.es)
+# * Authors:     David Maluenda (dmaluenda@cnb.csic.es)
 # *
-# * L'Institut de genetique et de biologie moleculaire et cellulaire (IGBMC)
+# * Unidad de  Bioinformatica of Centro Nacional de Biotecnologia , CSIC
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -24,25 +23,27 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-"""
-Bibtex string file for Gautomatch package.
-"""
 
 _bibtexStr = """
-@Article{Emsley_2004,
-Author="Emsley, P.  and Cowtan, K. ",
-Title="{{C}oot: model-building tools for molecular graphics}",
-Journal="Acta Crystallogr. D Biol. Crystallogr.",
-Year="2004",
-Volume="60",
-Number="Pt 12 Pt 1",
-Pages="2126--2132",
-Month="Dec",
-doi = "http://doi.org/10.1107/S0907444904019158",
-url = "http://scripts.iucr.org/cgi-bin/paper?S0907444904019158"
+
+@Article{Jakobi2017,
+  Title                    = {Model-based local density sharpening of cryo-EM maps},
+  Author                   = {Jakobi, Arjen J and Wilmanns, Matthias and Sachse, Carsten},
+  Journal                  = {eLife},
+  Year                     = {2017},
+  Month                    = {October},
+  Volume                   = {6},
+  Doi                      = {http://doi.org/10.7554/eLife.27131},
+  Url                      = {http://elifesciences.org/articles/27131},
+  Citation                 = {eLife 2017;6:e27131},
+  Issn                     = {2050-084X},
+  Publisher                = {eLife Sciences Publications, Ltd}
 }
+
 """
 
 from pyworkflow.utils import parseBibTex
 
 _bibtex = parseBibTex(_bibtexStr)  
+
+

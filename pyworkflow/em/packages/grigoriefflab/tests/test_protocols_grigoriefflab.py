@@ -114,6 +114,16 @@ class TestBrandeisBase(BaseTest):
                                        magnification=56000)
 
     @classmethod
+    def runImportMicrographRCT(cls, pattern):
+        """ Run an Import micrograph protocol. """
+        return cls.runImportMicrograph(pattern,
+                                       samplingRate=2.28,
+                                       voltage=100,
+                                       sphericalAberration=2.9,
+                                       scannedPixelSize=None,
+                                       magnification=50000)
+
+    @classmethod
     def runImportParticleGrigorieff(cls, pattern):
         """ Run an Import micrograph protocol. """
         return cls.runImportParticles(pattern,
@@ -201,7 +211,7 @@ class TestBrandeisCtffind(TestBrandeisBase):
         self.proj.launchProtocol(protCTF, wait=True)
         self.assertIsNotNone(protCTF.outputCTF, "SetOfCTF has not been produced.")
         
-        valuesList = [[23863, 23640, 64], [22159, 21983, 50.6], [22394, 22269, 45]]
+        valuesList = [[23920, 23499, 57.6], [22231, 21905, 59.3], [22444, 22270, 45.9]]
         for ctfModel, values in izip(protCTF.outputCTF, valuesList):
             self.assertAlmostEquals(ctfModel.getDefocusU(),values[0], delta=1000)
             self.assertAlmostEquals(ctfModel.getDefocusV(),values[1], delta=1000)
@@ -225,12 +235,7 @@ class TestBrandeisCtffind4(TestBrandeisBase):
         self.proj.launchProtocol(protCTF, wait=True)
         self.assertIsNotNone(protCTF.outputCTF, "SetOfCTF has not been produced.")
 
-        if getVersion(CTFFIND4_APP) == V4_1_10:
-            astigmatism = 91.68
-        else:
-            astigmatism = 54.3
-
-        valuesList = [[23861, 23664, 53], [22383, 22153, 48.5], [22716, 22526, astigmatism]]
+        valuesList = [[24049, 23586, 58], [22356, 22030, 44], [22661, 22480, 52]]
         for ctfModel, values in izip(protCTF.outputCTF, valuesList):
             self.assertAlmostEquals(ctfModel.getDefocusU(),values[0], delta=1000)
             self.assertAlmostEquals(ctfModel.getDefocusV(),values[1], delta=1000)
@@ -253,6 +258,35 @@ class TestBrandeisCtffind4(TestBrandeisBase):
             # self.assertAlmostEquals(ctfModel.getDefocusAngle(),values[2], delta=5)
             self.assertAlmostEquals(ctfModel.getMicrograph().getSamplingRate(),
                                     1.237, delta=0.001)
+
+
+class TestBrandeisCtftilt(TestBrandeisBase):
+    @classmethod
+    def setUpClass(cls):
+        setupTestProject(cls)
+        cls.dataset = DataSet.getDataSet('rct')
+        cls.micFn = cls.dataset.getFile('micrographs/F_rct_t_3003.tif')
+        cls.protImport = cls.runImportMicrographRCT(cls.micFn)
+
+    def testCtftilt(self):
+        protCTF = self.newProtocol(ProtCTFTilt,
+                                   minDefocus=1.0,
+                                   maxDefocus=1.5,
+                                   tiltA=38.0,
+                                   ctfDownFactor=2,
+                                   numberOfThreads=4)
+        protCTF.inputMicrographs.set(self.protImport.outputMicrographs)
+        self.proj.launchProtocol(protCTF, wait=True)
+        self.assertIsNotNone(protCTF.outputCTF, "SetOfCTF has not been produced.")
+
+        values = [14366, 12784, 21, 43.0]
+        for ctfModel in protCTF.outputCTF:
+            self.assertAlmostEquals(ctfModel.getDefocusU(), values[0], delta=1000)
+            self.assertAlmostEquals(ctfModel.getDefocusV(), values[1], delta=1000)
+            self.assertAlmostEquals(ctfModel.getDefocusAngle(), values[2], delta=5)
+            self.assertAlmostEqual(float(ctfModel._ctftilt_tiltAngle), values[3], delta=3.0)
+            self.assertAlmostEquals(ctfModel.getMicrograph().getSamplingRate(),
+                                    4.56, delta=0.001)
 
 
 class TestFrealignRefine(TestBrandeisBase):

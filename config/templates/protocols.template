@@ -168,6 +168,7 @@ Protocols SPA = [
         	{"tag": "protocol", "value": "XmippProtProjMatch",  "text": "default"},
         	{"tag": "protocol", "value": "EmanProtRefine",  "text": "default"},
         	{"tag": "protocol", "value": "SpiderProtRefinement",  "text": "default"},
+        	{"tag": "protocol", "value": "ProtLocScale",  "text": "default"},
         	{"tag": "section", "text": "more", "openItem": "False", "children": [
     	        {"tag": "protocol", "value": "ProtRelionPolish", "text": "default"}
             ]}
@@ -236,6 +237,8 @@ Protocols SPA = [
         {"tag": "protocol", "value": "ChimeraProtRigidFit",   "text": "default"},
         {"tag": "protocol", "value": "CootRefine",   "text": "default"},
         {"tag": "protocol", "value": "CCP4ProtRunRefmac",   "text": "default"},
+        {"tag": "protocol", "value": "PhenixProtRunEMRinger",   "text": "default"},
+	{"tag": "protocol", "value": "PhenixProtRunMolprobity",   "text": "default"},
         {"tag": "protocol", "value": "XmippProt3DBionotes",   "text": "default"}
     ]}
 

@@ -27,16 +27,16 @@
 # that are available to select in the form for the extraction of the unit
 # cell from a specific volume
 
+import math
 import os
 from tempfile import mkstemp
 
-from pyworkflow.tests.em.protocols.icosahedron import *
 from pyworkflow.em.constants import SYM_I222r, SYM_I222, SCIPION_SYM_NAME, \
     SYM_In25, SYM_In25r, SYM_CYCLIC, SYM_DIHEDRAL, SYM_TETRAHEDRAL, \
     SYM_OCTAHEDRAL
 from pyworkflow.em.convert import ImageHandler
 from pyworkflow.em.data import Transform
-from pyworkflow.em.convert_header.CCP4.convert import Ccp4Header
+from pyworkflow.em.headers import Ccp4Header
 from pyworkflow.em.packages.xmipp3 import getEnviron
 from pyworkflow.em.packages.xmipp3.constants import XMIPP_SYM_NAME
 from pyworkflow.em.packages.xmipp3.pdb.protocol_pseudoatoms \
@@ -46,6 +46,7 @@ from pyworkflow.em.packages.xmipp3.pdb.protocol_pseudoatoms_base \
 from pyworkflow.em.packages.xmipp3.protocol_extract_unit_cell \
     import XmippProtExtractUnit
 from pyworkflow.em.protocol import ProtImportVolumes
+from pyworkflow.em.symmetry import Icosahedron
 from pyworkflow.tests import BaseTest, setupTestProject
 from pyworkflow.utils import runJob
 
@@ -66,7 +67,7 @@ def generate_ico(sym, mode, f):
     else:
         f.write('.sphere %.3f %.3f %.3f .65\n' % (x, y, z))
     # print 5fold points
-    for vertice in icosahedron.get_vertices():
+    for vertice in icosahedron.getVertices():
         if mode == 'xmipp':
             f.write("sph  + 1. %.3f %.3f %.3f .15\n" %
                     (vertice[0], vertice[1], vertice[2]))
@@ -82,7 +83,7 @@ def generate_ico(sym, mode, f):
     .color yellow
     """)
 
-    for _3fold in icosahedron.get_3foldAxis():
+    for _3fold in icosahedron.get3foldAxis():
         x, y, z = _3fold
         if mode == 'xmipp':
             f.write("sph  + 1. %.3f %.3f %.3f .10\n" % (x, y, z))
@@ -96,7 +97,7 @@ def generate_ico(sym, mode, f):
         f.write(""".comment 2fold
     .color green
     """)
-    for _2fold in icosahedron.get_2foldAxis():
+    for _2fold in icosahedron.get2foldAxis():
         x, y, z = _2fold
 
         if mode == 'xmipp':

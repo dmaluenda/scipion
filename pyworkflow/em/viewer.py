@@ -206,6 +206,7 @@ class CtfView(ObjectView):
                  ]
     EXTRA_LABELS = ['_ctffind4_ctfResolution', '_gctf_ctfResolution',
                     '_ctffind4_ctfPhaseShift', '_gctf_ctfPhaseShift',
+                    '_ctftilt_tiltAxis', '_ctftilt_tiltAngle',
                     '_xmipp_ctfCritFirstZero',
                     '_xmipp_ctfCritCorr13', '_xmipp_ctfCritIceness','_xmipp_ctfCritFitting',
                     '_xmipp_ctfCritNonAstigmaticValidty',
@@ -517,7 +518,7 @@ class ChimeraViewer(Viewer):
                     f.write("open %s\n" % os.path.abspath(
                         ImageHandler.removeFileType(volumeObject.getFileName())))
                     f.write("volume #%d style surface\n"%volID)
-                    x, y, z = volumeObject.getVolOriginAsTuple()
+                    x, y, z = volumeObject.getShiftsFromOrigin()
                     f.write("volume #%d origin %0.2f,%0.2f,%0.2f\n" % (volID, x,
                                                                      y, z))
                 else:
