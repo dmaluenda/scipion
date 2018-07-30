@@ -34,7 +34,6 @@ import sys
 from inspect import isclass
 
 
-
 def getModules(path):
     """ Try to find possible sub-modules under path.
     A dictionary will be returned with modules names
@@ -99,6 +98,7 @@ def getSubclasses(BaseClass, inputDict):
         if isclass(v) and issubclass(v, BaseClass):
             outputDict[k] = v
     return outputDict
+
 
 def checkPlugin(module):
     if not getattr(module, '_plugin', None):

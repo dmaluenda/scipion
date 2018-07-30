@@ -50,7 +50,9 @@ class Domain(pyworkflow.plugin.Domain):
 
 
 class Plugin(pyworkflow.plugin.Plugin):
-                pass
+    pass
+
+
 
         
 def findClass(className):
