@@ -28,8 +28,9 @@ This module contains reflection utilities
 (dynamically load classes, inspect object properties and others)
 """
 
-import os, sys
+import os
 from os.path import exists, join
+import sys
 from inspect import isclass
 
 

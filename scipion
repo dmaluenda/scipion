@@ -553,9 +553,9 @@ MODE can be:
 
     config                 Check and/or write Scipion's global and local configuration.
     
-    install_plugin         Install Scipion plugins. Use flag --help to see usage.
+    installp               Install Scipion plugins. Use flag --help to see usage.
     
-    uninstall_plugin       Uninstall Scipion plugins. Use with flag --help to see usage.
+    uninstallp             Uninstall Scipion plugins. Use with flag --help to see usage.
     
     install_bins           Install Plugin Binaries. Use with flag --help to see usage.
 
