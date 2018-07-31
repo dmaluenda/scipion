@@ -446,4 +446,7 @@ env.addPackage('nysbc-3DFSC', version='2.5',
 env.addPackage('cryoEF', version='1.1.0',
                tar='cryoEF_v1.1.0.tgz')
 
+xmippBin = env.addPackage('xmippBin', version='18.05',
+                          tar='xmippBinaries-18.05.tgz')
+
 env.execute()
