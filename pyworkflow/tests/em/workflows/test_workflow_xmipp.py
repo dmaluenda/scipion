@@ -121,7 +121,8 @@ class TestXmippWorkflow(TestWorkflow):
         
         print "Run Screen Particles"
         protScreen = self.newProtocol(XmippProtScreenParticles,
-                                      autoParRejection=XmippProtScreenParticles.REJ_MAXZSCORE, maxZscore=3.0)
+                autoParRejection=XmippProtScreenParticles.REJ_MAXZSCORE, maxZscore=3.0,
+                autoParRejectionVar=XmippProtScreenParticles.REJ_VARIANCE)
         protScreen.inputParticles.set(protExtract.outputParticles)
         self.launchProtocol(protScreen)
         self.assertSetSize(protScreen.outputParticles,
